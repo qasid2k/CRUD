@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import type { TableSchema } from '../types';
 import Modal from './Modal.tsx';
 
+import ThemeToggle from './ThemeToggle';
+
 interface TableBrowserProps {
     tables: string[];
     showToast: (msg: string, type?: 'success' | 'error') => void;
@@ -120,6 +122,7 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
                             </button>
                         </>
                     )}
+                    <ThemeToggle />
                     <button className="btn btn-icon" onClick={() => loadTableData(currentTable)}>
                         <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
                     </button>

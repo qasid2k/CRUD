@@ -8,21 +8,49 @@
   --accent: #06b6d4;
   /* Cyan 500 */
 
-  --bg-dark: #0f172a;
-  /* Slate 900 */
-  --bg-darker: #020617;
-  /* Slate 950 */
-  --card-bg: rgba(30, 41, 59, 0.7);
-  /* Slate 800 with opacity */
-
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-
-  --border: rgba(255, 255, 255, 0.1);
-  --border-hover: rgba(255, 255, 255, 0.2);
+  /* Dark Theme (Default) - True Dark & Neutral */
+  --bg-dark: #0a0a0a;
+  --bg-darker: #050505;
+  --card-bg: rgba(18, 18, 18, 0.8);
+  --text-main: #f5f5f5;
+  --text-muted: #a3a3a3;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.15);
+  --table-header: rgba(12, 12, 12, 0.98);
+  --sidebar-bg: rgba(8, 8, 8, 0.7);
+  --gradient-start: #171717;
+  --input-bg: #121212;
+  --hover-bg: rgba(255, 255, 255, 0.03);
+  --row-even: rgba(255, 255, 255, 0.01);
+  --row-hover: rgba(255, 255, 255, 0.05);
+  --modal-footer: rgba(10, 10, 10, 0.5);
+  --progress-bg: rgba(255, 255, 255, 0.05);
+  --status-bg: rgba(16, 185, 129, 0.1);
+  --talking-bg: rgba(6, 182, 212, 0.05);
 
   --danger: #ef4444;
   --success: #10b981;
+}
+
+[data-theme='light'] {
+  --bg-dark: #f1f5f9;
+  --bg-darker: #f8fafc;
+  --card-bg: rgba(255, 255, 255, 0.8);
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border: rgba(0, 0, 0, 0.1);
+  --border-hover: rgba(0, 0, 0, 0.2);
+  --table-header: rgba(241, 245, 249, 0.95);
+  --sidebar-bg: rgba(248, 240, 246, 0.6);
+  --gradient-start: #e0e7ff;
+  --input-bg: #ffffff;
+  --hover-bg: rgba(0, 0, 0, 0.05);
+  --row-even: rgba(0, 0, 0, 0.01);
+  --row-hover: rgba(79, 70, 229, 0.05);
+  --modal-footer: rgba(241, 245, 249, 0.5);
+  --progress-bg: rgba(0, 0, 0, 0.05);
+  --status-bg: rgba(16, 185, 129, 0.05);
+  --talking-bg: rgba(6, 182, 212, 0.02);
 }
 
 * {
@@ -47,13 +75,13 @@ body {
 .dashboard-layout {
   display: flex;
   height: 100vh;
-  background: radial-gradient(circle at top right, #1e1b4b 0%, var(--bg-darker) 100%);
+  background: radial-gradient(circle at top right, var(--gradient-start) 0%, var(--bg-darker) 100%);
 }
 
 /* Sidebar */
 .sidebar {
   width: 260px;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--sidebar-bg);
   backdrop-filter: blur(12px);
   border-right: 1px solid var(--border);
   padding: 20px 0;
@@ -106,7 +134,7 @@ body {
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hover-bg);
   color: var(--text-main);
 }
 
@@ -169,7 +197,7 @@ h1 {
 .search-box input {
   background: transparent;
   border: none;
-  color: white;
+  color: var(--text-main);
   padding: 10px 8px;
   width: 100%;
   outline: none;
@@ -269,13 +297,13 @@ h1 {
 }
 
 .table-dropdown {
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--input-bg);
+  color: var(--text-main);
   padding: 12px 16px;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
-  border: none;
+  border: 1px solid var(--border);
   outline: none;
   cursor: pointer;
 }
@@ -310,14 +338,14 @@ table {
 }
 
 th {
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--table-header);
   position: sticky;
   top: 0;
   text-align: left;
   padding: 14px 16px;
   font-size: 11px;
   text-transform: uppercase;
-  color: #e2e8f0;
+  color: var(--text-main);
   font-weight: 700;
   letter-spacing: 0.05em;
   border-bottom: 2px solid var(--primary);
@@ -335,7 +363,7 @@ td {
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
   font-size: 13px;
-  color: #cbd5e1;
+  color: var(--text-muted);
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -347,12 +375,12 @@ td:last-child {
 }
 
 tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.01);
+  background: var(--row-even);
 }
 
 tr:hover td {
-  background: rgba(79, 70, 229, 0.1);
-  color: white;
+  background: var(--row-hover);
+  color: var(--text-main);
 }
 
 /* Empty State */
@@ -388,7 +416,7 @@ tr:hover td {
 }
 
 .modal-content {
-  background: #1e293b;
+  background: var(--bg-dark);
   width: 100%;
   max-width: 600px;
   border-radius: 16px;
@@ -419,7 +447,7 @@ tr:hover td {
   justify-content: flex-end;
   gap: 12px;
   border-top: 1px solid var(--border);
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--modal-footer);
 }
 
 /* Forms */
@@ -438,9 +466,9 @@ tr:hover td {
 
 .form-field input {
   width: 100%;
-  background: #0f172a;
+  background: var(--input-bg);
   border: 1px solid var(--border);
-  color: white;
+  color: var(--text-main);
   padding: 12px;
   border-radius: 8px;
   font-size: 14px;
@@ -524,7 +552,6 @@ tr:hover td {
 .avatar {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, #1e293b, #334155);
   border-radius: 10px;
   display: flex;
   align-items: center;

@@ -3,6 +3,24 @@ import { RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import type { QueueStatus } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
+import ThemeToggle from './ThemeToggle';
+
+const getAvatarColor = (name: string) => {
+    const colors = [
+        '#4f46e5', // Indigo
+        '#06b6d4', // Cyan
+        '#10b981', // Emerald
+        '#f59e0b', // Amber
+        '#ef4444', // Red
+        '#8b5cf6', // Violet
+        '#ec4899', // Pink
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+};
 
 const QueueDashboard: React.FC = () => {
     const [queues, setQueues] = useState<QueueStatus[]>([]);
@@ -33,9 +51,12 @@ const QueueDashboard: React.FC = () => {
         <div className="dashboard-section">
             <header className="top-bar">
                 <h1>Queue Real-time Dashboard</h1>
-                <button className="btn btn-icon" onClick={fetchStatus}>
-                    <RefreshCw size={20} />
-                </button>
+                <div className="actions">
+                    <ThemeToggle />
+                    <button className="btn btn-icon" onClick={fetchStatus}>
+                        <RefreshCw size={20} />
+                    </button>
+                </div>
             </header>
 
             <div className="dashboard-grid">
@@ -54,7 +75,7 @@ const QueueDashboard: React.FC = () => {
                                     <h3 style={{ fontSize: '20px', fontWeight: 700 }}>{q.name}</h3>
                                     <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{q.strategy}</span>
                                 </div>
-                                <div className="status-online live-pulse" style={{ fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                                <div className="status-online live-pulse" style={{ fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '20px', border: '1px solid var(--border)', background: 'var(--status-bg)' }}>
                                     ● {q.serviceLevel}% SL
                                 </div>
                             </div>
@@ -75,7 +96,7 @@ const QueueDashboard: React.FC = () => {
                                     <span>Calls Waiting</span>
                                     <span>{q.callsWaiting}</span>
                                 </div>
-                                <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                                <div style={{ height: '8px', background: 'var(--progress-bg)', borderRadius: '4px', overflow: 'hidden' }}>
                                     <motion.div
                                         initial={{ width: 0 }}
                                         animate={{ width: `${Math.min((q.callsWaiting / 10) * 100, 100)}%` }}
@@ -114,12 +135,22 @@ const QueueDashboard: React.FC = () => {
                                             {members.map((m, idx) => (
                                                 <div key={idx} className="member-item" style={{ marginBottom: '12px', borderBottom: members.length - 1 === idx ? 'none' : '1px solid var(--border)', paddingBottom: '12px' }}>
                                                     <div className="member-info">
-                                                        <div className="avatar">{(m.name || m.number).charAt(0)}</div>
+                                                        <div
+                                                            className="avatar"
+                                                            style={{
+                                                                background: `linear-gradient(135deg, ${getAvatarColor(m.name || m.number)}, rgba(0,0,0,0.3))`,
+                                                                color: 'white',
+                                                                border: 'none',
+                                                                textShadow: '0 1px 2px rgba(0,0,0,0.2)'
+                                                            }}
+                                                        >
+                                                            {(m.name || m.number).charAt(0)}
+                                                        </div>
                                                         <div>
                                                             <div style={{ fontSize: '13px', fontWeight: 600 }}>{m.name || 'Unknown'}</div>
                                                             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>EXT: {m.number}</div>
                                                             {m.connectedParty && (
-                                                                <div style={{ marginTop: '4px', padding: '4px 8px', background: 'rgba(6, 182, 212, 0.05)', borderRadius: '4px', fontSize: '10px', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }}>
+                                                                <div style={{ marginTop: '4px', padding: '4px 8px', background: 'var(--talking-bg)', borderRadius: '4px', fontSize: '10px', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }}>
                                                                     TALKING TO: {m.connectedParty.name || m.connectedParty.num}
                                                                 </div>
                                                             )}
