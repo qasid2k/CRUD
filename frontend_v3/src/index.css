@@ -27,6 +27,7 @@
   --progress-bg: rgba(255, 255, 255, 0.05);
   --status-bg: rgba(16, 185, 129, 0.1);
   --talking-bg: rgba(6, 182, 212, 0.05);
+  --progress-border: rgba(255, 255, 255, 0.1);
 
   --danger: #ef4444;
   --success: #10b981;
@@ -38,8 +39,8 @@
   --card-bg: rgba(255, 255, 255, 0.8);
   --text-main: #0f172a;
   --text-muted: #64748b;
-  --border: rgba(0, 0, 0, 0.1);
-  --border-hover: rgba(0, 0, 0, 0.2);
+  --border: rgba(0, 0, 0, 0.15);
+  --border-hover: rgba(0, 0, 0, 0.25);
   --table-header: rgba(241, 245, 249, 0.95);
   --sidebar-bg: rgba(248, 240, 246, 0.6);
   --gradient-start: #e0e7ff;
@@ -48,9 +49,10 @@
   --row-even: rgba(0, 0, 0, 0.01);
   --row-hover: rgba(79, 70, 229, 0.05);
   --modal-footer: rgba(241, 245, 249, 0.5);
-  --progress-bg: rgba(0, 0, 0, 0.05);
+  --progress-bg: rgba(0, 0, 0, 0.1);
   --status-bg: rgba(16, 185, 129, 0.05);
   --talking-bg: rgba(6, 182, 212, 0.02);
+  --progress-border: rgba(0, 0, 0, 0.2);
 }
 
 * {
@@ -150,7 +152,8 @@ body {
   display: flex;
   flex-direction: column;
   padding: 24px 32px;
-  overflow: hidden;
+  overflow-y: auto;
+  /* Enable page-level scrolling */
 }
 
 .top-bar {
@@ -306,6 +309,79 @@ h1 {
   border: 1px solid var(--border);
   outline: none;
   cursor: pointer;
+}
+
+/* Progress Bars */
+.progress-container {
+  margin-bottom: 24px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.progress-track {
+  height: 12px;
+  background: var(--progress-bg);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--progress-border);
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  box-shadow: 0 0 10px var(--primary-glow);
+  position: relative;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent);
+  animation: shine 2s infinite;
+}
+
+@keyframes shine {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+  0% {
+    box-shadow: 0 0 5px var(--primary-glow);
+  }
+
+  50% {
+    box-shadow: 0 0 15px var(--primary-glow);
+  }
+
+  100% {
+    box-shadow: 0 0 5px var(--primary-glow);
+  }
 }
 
 /* Data Table Container */
@@ -501,37 +577,49 @@ tr:hover td {
 }
 
 /* Queue Dashboard Specifics */
+.dashboard-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-  gap: 24px;
-  overflow-y: auto;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 32px;
+  padding-bottom: 40px;
 }
 
 .queue-card {
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
+  border-radius: 20px;
+  padding: 32px;
   backdrop-filter: blur(12px);
   position: relative;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  /* Clips the top accent bar to rounded corners */
   transition: transform 0.2s, border-color 0.2s;
-}
-
-.queue-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 4px;
-  background: linear-gradient(90deg, var(--primary), var(--accent));
 }
 
 .queue-card:hover {
   border-color: var(--primary);
   transform: translateY(-4px);
+}
+
+.member-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.member-list {
+  flex: 1;
 }
 
 .member-item {
@@ -614,4 +702,37 @@ tr:hover td {
   100% {
     opacity: 1;
   }
+}
+
+/* Minimalistic & Auto-hiding Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 10px;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary) !important;
+}
+
+/* Firefox Support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: var(--border-hover) transparent;
 }

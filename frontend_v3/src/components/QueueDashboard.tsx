@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { api } from '../api/client';
 import type { QueueStatus } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -25,6 +25,7 @@ const getAvatarColor = (name: string) => {
 const QueueDashboard: React.FC = () => {
     const [queues, setQueues] = useState<QueueStatus[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const fetchStatus = async () => {
         try {
@@ -43,6 +44,10 @@ const QueueDashboard: React.FC = () => {
         return () => clearInterval(interval);
     }, []);
 
+    const filteredQueues = queues.filter(q =>
+        q.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
     if (loading && queues.length === 0) {
         return <div className="loading-state">Syncing live data...</div>;
     }
@@ -50,7 +55,18 @@ const QueueDashboard: React.FC = () => {
     return (
         <div className="dashboard-section">
             <header className="top-bar">
-                <h1>Queue Real-time Dashboard</h1>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                    <h1>Live Queues</h1>
+                    <div className="search-box">
+                        <Search className="search-box-icon" />
+                        <input
+                            type="text"
+                            placeholder="Filter queues..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                </div>
                 <div className="actions">
                     <ThemeToggle />
                     <button className="btn btn-icon" onClick={fetchStatus}>
@@ -61,7 +77,7 @@ const QueueDashboard: React.FC = () => {
 
             <div className="dashboard-grid">
                 <AnimatePresence mode="popLayout">
-                    {queues.map((q) => (
+                    {filteredQueues.map((q) => (
                         <motion.div
                             key={q.name}
                             layout
@@ -91,22 +107,31 @@ const QueueDashboard: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: '24px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px' }}>
-                                    <span>Calls Waiting</span>
-                                    <span>{q.callsWaiting}</span>
+                            <div className="progress-container">
+                                <div className="progress-header">
+                                    <span style={{ color: q.callsWaiting > 0 ? 'var(--accent)' : 'inherit' }}>
+                                        Calls Waiting
+                                    </span>
+                                    <span style={{ fontWeight: 800, color: q.callsWaiting > 0 ? 'var(--accent)' : 'inherit' }}>
+                                        {q.callsWaiting}
+                                    </span>
                                 </div>
-                                <div style={{ height: '8px', background: 'var(--progress-bg)', borderRadius: '4px', overflow: 'hidden' }}>
+                                <div className={`progress-track ${q.callsWaiting > 0 ? 'pulse-glow' : ''}`}>
                                     <motion.div
                                         initial={{ width: 0 }}
                                         animate={{ width: `${Math.min((q.callsWaiting / 10) * 100, 100)}%` }}
                                         transition={{ duration: 0.5 }}
-                                        style={{ height: '100%', background: 'linear-gradient(90deg, var(--primary), var(--accent))' }}
+                                        className="progress-fill"
+                                        style={{
+                                            background: q.callsWaiting > 5
+                                                ? 'linear-gradient(90deg, #f59e0b, #ef4444)'
+                                                : 'linear-gradient(90deg, var(--primary), var(--accent))'
+                                        }}
                                     />
                                 </div>
                             </div>
 
-                            <div className="member-section" style={{ borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
+                            <div className="member-section">
                                 <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '16px' }}>AGENTS BY PENALTY</h4>
                                 <div className="member-list">
                                     {Object.entries(
