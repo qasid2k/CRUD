@@ -37,4 +37,8 @@ export const api = {
         const { data } = await client.get<any[]>('/api/queues/status');
         return data;
     },
+    post: async (url: string, payload: any) => {
+        const { data } = await client.post(url, payload);
+        return data;
+    },
 };

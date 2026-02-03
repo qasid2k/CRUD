@@ -101,9 +101,16 @@ class QueueStatusManager:
                         p_num = event.get("ConnectedLineNum") or event.get("CallerIDNum")
                         p_name = event.get("ConnectedLineName") or event.get("CallerIDName")
                         if p_num and p_num != "<unknown>":
-                            channel_map[chan] = {
+                            channel_map[chan.lower()] = {
                                 "num": p_num,
-                                "name": p_name if p_name and p_name != "<unknown>" else ""
+                                "name": p_name if p_name and p_name != "<unknown>" else "",
+                                "application": event.get("Application", ""),
+                                "data": event.get("Data", ""),
+                                "state": event.get("ChannelStateDesc", ""),
+                                # For a channel PJSIP/102-xxx, the "Other side" is usually ConnectedLine
+                                # but if that's empty, we check the other way.
+                                "connected_line": event.get("ConnectedLineNum", ""),
+                                "caller_id": event.get("CallerIDNum", "")
                             }
 
                 # Get Queue Status
@@ -160,10 +167,47 @@ class QueueStatusManager:
                             member_name = db_names.get(interface) or ext_names.get(ext_num) or ami_name or ext_num
 
                             connected_party = None
-                            for chan, details in channel_map.items():
-                                if interface and interface in chan:
-                                    connected_party = details
-                                    break
+                            spy_status = None # If someone is spying on THIS member
+                            
+                            for chan_key, details in channel_map.items():
+                                # Check for bridged call (talking to)
+                                # We check if the interface (e.g. PJSIP/102) is inside the channel name (e.g. pjsip/102-00001)
+                                if interface and interface.lower() in chan_key:
+                                    # Regular call logic - ignore ChanSpy
+                                    if details.get("application") != "ChanSpy":
+                                        # Use the logic: If I am PJSIP/102, I want to show the OTHER person.
+                                        # Usually, ConnectedLineNum is the other person.
+                                        other_num = details.get("connected_line")
+                                        if not other_num or other_num == ext_num or other_num == "<unknown>":
+                                            other_num = details.get("caller_id") # Fallback
+                                        
+                                        # If we still only find ourselves, we keep the original p_num as last resort
+                                        connected_party = {
+                                            "num": other_num if other_num and other_num != ext_num else details.get("num"),
+                                            "name": details.get("name") if other_num != details.get("num") else ""
+                                        }
+                                
+                                # Check for Spy Logic: Is Supervisor 104 spying on THIS interface?
+                                if details.get("application") == "ChanSpy":
+                                    spy_data = details.get("data", "")
+                                    if interface and interface in spy_data:
+                                        # This specific member is being spied on!
+                                        # Extract who is spying
+                                        spyer_num = details.get("num", "Unknown")
+                                        if not spyer_num or spyer_num == "<unknown>":
+                                            spyer_match = re.search(r'/(?:extension-)?(\d+)', chan_key)
+                                            spyer_num = spyer_match.group(1) if spyer_match else "Supervisor"
+                                        
+                                        # Parse mode based on flags
+                                        mode = "Listen"
+                                        if 'w' in spy_data.lower(): mode = "Whisper"
+                                        elif 'b' in spy_data: mode = "Barge" # b or B
+                                        elif 'd' in spy_data.lower(): mode = "Interactive Spy"
+                                        
+                                        spy_status = {
+                                            "spyer": spyer_num,
+                                            "mode": mode
+                                        }
 
                             queues_data[q_name]["members"].append({
                                 "name": member_name,
@@ -172,7 +216,8 @@ class QueueStatusManager:
                                 "status": status_label,
                                 "penalty": int(event.get("Penalty", 0)),
                                 "calls": int(event.get("CallsTaken", 0)),
-                                "connectedParty": connected_party
+                                "connectedParty": connected_party,
+                                "spyStatus": spy_status
                             })
 
                 for q_name in queues_data:
@@ -189,6 +234,58 @@ class QueueStatusManager:
                 print(f"AMI Error: {e}")
                 traceback.print_exc()
                 return {"error": str(e)}
+
+    async def perform_spy_action(self, supervisor_ext: str, target_interface: str, mode: str):
+        """
+        Triggers a ChanSpy operation via AMI Originate.
+        mode: 'spy' (Listen), 'whisper' (Whisper), 'barge' (Barge)
+        """
+        async with self.lock:
+            try:
+                await self._ensure_connected()
+                
+                # ChanSpy options:
+                # q: quiet (no beep)
+                # d: DTMF interactive mode (4=Listen, 5=Whisper, 6=Barge)
+                options = "dq" 
+                
+                # We originate a call from the Supervisor to the ChanSpy application
+                # The target is the member's interface (e.g. PJSIP/101)
+                
+                # NOTE: Channel should be the Supervisor's actual device channel
+                # We assume PJSIP or what's in DB. For simplicity, we use Local/EXT@from-internal if possible,
+                # but direct PJSIP/EXT is more common for system phones.
+                supervisor_chan = f"PJSIP/{supervisor_ext}" 
+                
+                print(f"DEBUG: Spy Action Triggered - Supervisor: {supervisor_chan}, Target: {target_interface}, Mode: {mode}")
+                
+                action = (
+                    f"Action: Originate\r\n"
+                    f"Channel: {supervisor_chan}\r\n"
+                    f"Application: ChanSpy\r\n"
+                    f"Data: {target_interface},{options}\r\n"
+                    f"CallerID: \"Spy: {target_interface}\" <{supervisor_ext}>\r\n"
+                    f"Variable: VAR1=SpyAction\r\n"
+                    f"Async: true\r\n\r\n"
+                )
+                
+                self.writer.write(action.encode())
+                await self.writer.drain()
+                
+                # We wait a bit for the response to be read correctly
+                resp = await asyncio.wait_for(self._read_until_delimiter(self.reader), timeout=3.0)
+                print(f"DEBUG: AMI Spy Response: {resp.strip()}")
+                
+                if "Success" in resp or "Queued" in resp:
+                    return {"status": "success", "message": f"Spy {mode} initiated for {target_interface}"}
+                else:
+                    return {"status": "error", "message": f"AMI error: {resp.strip()}"}
+
+            except Exception as e:
+                print(f"ERROR: Spy Action failed: {e}")
+                traceback.print_exc()
+                self.writer = None
+                return {"status": "error", "message": str(e)}
 
     async def _read_until_delimiter(self, reader):
         content = ""

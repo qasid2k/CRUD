@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search, Shield, Headphones, Mic, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
 import type { QueueStatus } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -35,6 +35,21 @@ const QueueDashboard: React.FC = () => {
             console.error('Failed to fetch queue status', err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleSpy = async (targetInterface: string, mode: 'spy' | 'whisper' | 'barge') => {
+        try {
+            const supervisorExt = '104'; // Specified supervisor
+            await api.post('/api/queues/spy', {
+                supervisor_ext: supervisorExt,
+                target_interface: targetInterface,
+                mode: mode
+            });
+            alert(`Initiated ${mode} on ${targetInterface}`);
+        } catch (err) {
+            console.error('Spy action failed', err);
+            alert('Failed to initiate spy action. Ensure extension 104 is online.');
         }
     };
 
@@ -132,7 +147,7 @@ const QueueDashboard: React.FC = () => {
                             </div>
 
                             <div className="member-section">
-                                <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '16px' }}>AGENTS BY PENALTY</h4>
+                                <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '16px' }}>LIST OF MEMBERS</h4>
                                 <div className="member-list">
                                     {Object.entries(
                                         q.members.reduce((acc, m) => {
@@ -142,48 +157,136 @@ const QueueDashboard: React.FC = () => {
                                             return acc;
                                         }, {} as Record<number, typeof q.members>)
                                     ).sort(([a], [b]) => Number(a) - Number(b)).map(([penalty, members]) => (
-                                        <div key={penalty} style={{ marginBottom: '20px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                        <div key={penalty} style={{ marginBottom: '24px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                                                 <span style={{
-                                                    fontSize: '10px',
-                                                    fontWeight: 800,
-                                                    background: Number(penalty) === 0 ? 'var(--primary)' : 'var(--secondary)',
+                                                    fontSize: '11px',
+                                                    fontWeight: 900,
+                                                    background: Number(penalty) === 0 ? 'var(--primary)' :
+                                                        Number(penalty) === 1 ? 'var(--accent)' : 'var(--secondary)',
                                                     color: 'white',
-                                                    padding: '2px 8px',
-                                                    borderRadius: '4px',
-                                                    textTransform: 'uppercase'
+                                                    padding: '4px 12px',
+                                                    borderRadius: '6px',
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.05em'
                                                 }}>
-                                                    Tier {penalty}
+                                                    {Number(penalty) === 0 ? 'Agents' :
+                                                        Number(penalty) === 1 ? 'Supervisor' : `Tier ${penalty}`}
                                                 </span>
                                                 <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
                                             </div>
                                             {members.map((m, idx) => (
-                                                <div key={idx} className="member-item" style={{ marginBottom: '12px', borderBottom: members.length - 1 === idx ? 'none' : '1px solid var(--border)', paddingBottom: '12px' }}>
-                                                    <div className="member-info">
-                                                        <div
-                                                            className="avatar"
-                                                            style={{
-                                                                background: `linear-gradient(135deg, ${getAvatarColor(m.name || m.number)}, rgba(0,0,0,0.3))`,
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                textShadow: '0 1px 2px rgba(0,0,0,0.2)'
-                                                            }}
-                                                        >
-                                                            {(m.name || m.number).charAt(0)}
+                                                <div key={idx} style={{ marginBottom: idx === members.length - 1 ? 0 : '16px', paddingBottom: idx === members.length - 1 ? 0 : '16px', borderBottom: idx === members.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                                                    <div className="member-item" style={{ border: 'none', padding: 0, marginBottom: '8px', alignItems: 'center', display: 'flex', justifyContent: 'space-between' }}>
+                                                        <div className="member-info">
+                                                            <div
+                                                                className="avatar"
+                                                                style={{
+                                                                    background: `linear-gradient(135deg, ${getAvatarColor(m.name || m.number)}, rgba(0,0,0,0.3))`,
+                                                                    color: 'white',
+                                                                    border: 'none',
+                                                                    textShadow: '0 1px 2px rgba(0,0,0,0.2)'
+                                                                }}
+                                                            >
+                                                                {(m.name || m.number).charAt(0)}
+                                                            </div>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                    <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)' }}>
+                                                                        {m.name || 'Unknown'}
+                                                                    </div>
+                                                                    <span style={{
+                                                                        fontSize: '10px',
+                                                                        background: 'rgba(255,255,255,0.05)',
+                                                                        padding: '2px 8px',
+                                                                        borderRadius: '4px',
+                                                                        color: 'var(--text-muted)',
+                                                                        fontWeight: 800,
+                                                                        border: '1px solid var(--border)',
+                                                                        letterSpacing: '0.02em'
+                                                                    }}>
+                                                                        EXT: {m.number}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <div style={{ fontSize: '13px', fontWeight: 600 }}>{m.name || 'Unknown'}</div>
-                                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>EXT: {m.number}</div>
-                                                            {m.connectedParty && (
-                                                                <div style={{ marginTop: '4px', padding: '4px 8px', background: 'var(--talking-bg)', borderRadius: '4px', fontSize: '10px', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }}>
-                                                                    TALKING TO: {m.connectedParty.name || m.connectedParty.num}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                            {/* Supervisor Actions (Only during established call) */}
+                                                            {m.penalty === 0 && m.connectedParty && (
+                                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                                    <button
+                                                                        title="Start Interactive Spy (4=Listen, 5=Whisper, 6=Barge)"
+                                                                        onClick={() => handleSpy(m.interface, 'spy')}
+                                                                        className="spy-action-btn"
+                                                                        style={{ width: '80px', gap: '8px' }}>
+                                                                        <Headphones size={13} /> Spy
+                                                                    </button>
                                                                 </div>
                                                             )}
+                                                            <div className={`status-indicator status-${m.status.toLowerCase()}`}>
+                                                                <div className="dot" /> {m.status}
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <div className={`status-indicator status-${m.status.toLowerCase()}`}>
-                                                        <div className="dot" /> {m.status}
-                                                    </div>
+
+                                                    {/* ON CALL Info - More Prominent Layout */}
+                                                    {m.connectedParty && (
+                                                        <div style={{
+                                                            marginTop: '12px',
+                                                            padding: '12px 16px',
+                                                            background: 'rgba(79, 70, 229, 0.08)',
+                                                            borderRadius: '10px',
+                                                            borderLeft: '4px solid var(--accent)',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            gap: '6px'
+                                                        }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 8px var(--accent)' }}></div>
+                                                                <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                                                    Live Call Connection
+                                                                </span>
+                                                            </div>
+
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '2px' }}>
+                                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>Partner Name</span>
+                                                                    <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)' }}>
+                                                                        {m.connectedParty.name && m.connectedParty.name !== m.connectedParty.num ? m.connectedParty.name : 'Caller'}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div style={{ width: '1px', height: '24px', background: 'var(--border)' }}></div>
+
+                                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>Number</span>
+                                                                    <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.02em' }}>
+                                                                        {m.connectedParty.num}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Spy Status Indicator */}
+                                                    {m.spyStatus && (
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '8px',
+                                                            margin: '12px 0 8px 0',
+                                                            padding: '8px 14px',
+                                                            background: 'rgba(139, 92, 246, 0.1)',
+                                                            borderRadius: '8px',
+                                                            border: '1px solid var(--primary)',
+                                                            fontSize: '11px',
+                                                            color: 'var(--primary)',
+                                                            fontWeight: 700
+                                                        }}>
+                                                            <Shield size={14} /> SUPERVISOR {m.spyStatus.spyer} IS {m.spyStatus.mode.toUpperCase()}ING
+                                                        </div>
+                                                    )}
+
                                                 </div>
                                             ))}
                                         </div>

@@ -1,12 +1,17 @@
 export interface QueueMember {
     name: string;
     number: string;
+    interface: string;
     status: string;
     penalty: number;
-    paused: boolean;
+    paused?: boolean;
     connectedParty?: {
         name: string;
         num: string;
+    } | null;
+    spyStatus?: {
+        spyer: string;
+        mode: string;
     } | null;
 }
 

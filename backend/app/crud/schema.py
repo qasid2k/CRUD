@@ -21,3 +21,10 @@ class ItemUpdate(RootModel[Dict[str, Any]]):
     def to_dict(self) -> Dict[str, Any]:
         return self.root
 
+from pydantic import BaseModel
+
+class SpyRequest(BaseModel):
+    supervisor_ext: str
+    target_interface: str
+    mode: str # 'spy', 'whisper', 'barge'
+

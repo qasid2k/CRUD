@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from ..database import get_session
-from .schema import ItemCreate, ItemUpdate
+from . import schema
 from . import service
 
 
@@ -16,6 +16,14 @@ router = APIRouter()
 async def get_queues_status():
     """Returns real-time queue status from Asterisk."""
     return await queue_status.queue_manager.get_queue_status()
+
+
+@router.post("/queues/spy")
+async def perform_spy_action(request: schema.SpyRequest):
+    """Initiates a spy action from supervisor to target."""
+    return await queue_status.queue_manager.perform_spy_action(
+        request.supervisor_ext, request.target_interface, request.mode
+    )
 
 
 @router.get("/{table_name}")
@@ -36,7 +44,7 @@ async def get_table_schema(table_name: str):
 @router.post("/{table_name}")
 async def create_item(
     table_name: str,
-    item: ItemCreate,
+    item: schema.ItemCreate,
     session: Session = Depends(get_session),
 ):
     return service.create_item(table_name, data=item.to_dict(), session=session)
@@ -46,7 +54,7 @@ async def create_item(
 async def update_item(
     table_name: str,
     item_id: str,
-    item: ItemUpdate,
+    item: schema.ItemUpdate,
     session: Session = Depends(get_session),
 ):
     return service.update_item(
