@@ -225,6 +225,14 @@ class QueueStatusManager:
 
                 return list(queues_data.values())
 
+            except asyncio.TimeoutError:
+                # Cleanup on timeout
+                if self.writer: 
+                    try: self.writer.close()
+                    except: pass
+                self.writer = None
+                print(f"AMI Error: Connection timeout to {AMI_HOST}:{AMI_PORT}")
+                return []
             except Exception as e:
                 # Cleanup on error
                 if self.writer: 
@@ -233,7 +241,7 @@ class QueueStatusManager:
                 self.writer = None
                 print(f"AMI Error: {e}")
                 traceback.print_exc()
-                return {"error": str(e)}
+                return []
 
     async def perform_spy_action(self, supervisor_ext: str, target_interface: str, mode: str):
         """

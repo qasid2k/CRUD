@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Search, Shield, Headphones, Mic, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Search, Shield, Headphones } from 'lucide-react';
 import { api } from '../api/client';
 import type { QueueStatus } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';

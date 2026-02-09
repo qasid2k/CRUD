@@ -718,3 +718,17 @@ class Voicemail(SQLModel, table=True):
     imapflags: Optional[str] = Field(default=None, nullable=True)
     stamp: Optional[datetime] = Field(default=None, nullable=True)
 
+
+class QueueLog(SQLModel, table=True):
+    __tablename__ = 'queue_log'
+    time: str = Field(primary_key=True)
+    callid: str = Field(primary_key=True)
+    queuename: str = Field()
+    agent: str = Field()
+    event: str = Field(primary_key=True)
+    data1: Optional[str] = Field(default=None, nullable=True)
+    data2: Optional[str] = Field(default=None, nullable=True)
+    data3: Optional[str] = Field(default=None, nullable=True)
+    data4: Optional[str] = Field(default=None, nullable=True)
+    data5: Optional[str] = Field(default=None, nullable=True)
+
