@@ -62,4 +62,4 @@ AsterFlow follows a **Rich Aesthetic** philosophy:
 ---
 
 ## 📝 License
-[Insert License Here - e.g., MIT]
+MIT
