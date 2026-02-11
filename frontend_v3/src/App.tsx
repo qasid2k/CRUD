@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import QueueDashboard from './components/QueueDashboard';
 import TableBrowser from './components/TableBrowser.tsx';
+import CdrReport from './components/CdrReport';
 import Toast from './components/Toast.tsx';
 import { api } from './api/client';
 import './index.css';
 
-export type Page = 'dashboard' | 'browser';
+export type Page = 'dashboard' | 'browser' | 'cdr';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -40,6 +41,8 @@ const App: React.FC = () => {
       <main className="main-content">
         {currentPage === 'dashboard' ? (
           <QueueDashboard />
+        ) : currentPage === 'cdr' ? (
+          <CdrReport />
         ) : (
           <TableBrowser
             tables={tables}

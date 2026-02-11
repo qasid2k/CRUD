@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Database, Server } from 'lucide-react';
+import { LayoutDashboard, Database, Server, BarChart3 } from 'lucide-react';
 import type { Page } from '../App';
 
 interface SidebarProps {
@@ -23,6 +23,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, setCurrentPage }) => {
                 >
                     <LayoutDashboard size={18} />
                     <span>Queue Dashboard</span>
+                </div>
+                <div
+                    className={`nav-item ${currentPage === 'cdr' ? 'active' : ''}`}
+                    onClick={() => setCurrentPage('cdr')}
+                >
+                    <BarChart3 size={18} />
+                    <span>CDR Reports</span>
                 </div>
                 <div
                     className={`nav-item ${currentPage === 'browser' ? 'active' : ''}`}
