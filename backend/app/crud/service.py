@@ -31,6 +31,8 @@ def list_items(table_name: str, skip: int, limit: int, session: Session):
 
 def create_item(table_name: str, data: Dict[str, Any], session: Session):
     model = get_model_or_404(table_name)
+    if table_name.lower() in ["queue_log", "cdr"]:
+        raise HTTPException(status_code=403, detail="Table is read-only")
     try:
         new_item = repository.create_item(session, model, data)
         
@@ -74,6 +76,8 @@ def create_item(table_name: str, data: Dict[str, Any], session: Session):
 
 def update_item(table_name: str, item_id: str, data: Dict[str, Any], session: Session):
     model = get_model_or_404(table_name)
+    if table_name.lower() in ["queue_log", "cdr"]:
+        raise HTTPException(status_code=403, detail="Table is read-only")
     obj = repository.get_item_by_id(session, model, item_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -90,6 +94,8 @@ def update_item(table_name: str, item_id: str, data: Dict[str, Any], session: Se
 
 def delete_item(table_name: str, item_id: str, session: Session):
     model = get_model_or_404(table_name)
+    if table_name.lower() in ["queue_log", "cdr"]:
+        raise HTTPException(status_code=403, detail="Table is read-only")
     obj = repository.get_item_by_id(session, model, item_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="Item not found")

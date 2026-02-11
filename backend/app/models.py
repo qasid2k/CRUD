@@ -732,3 +732,24 @@ class QueueLog(SQLModel, table=True):
     data4: Optional[str] = Field(default=None, nullable=True)
     data5: Optional[str] = Field(default=None, nullable=True)
 
+
+class Cdr(SQLModel, table=True):
+    __tablename__ = 'cdr'
+    # Using a composite PK because Asterisk creates multiple segments per uniqueid
+    uniqueid: str = Field(primary_key=True)
+    calldate: datetime = Field(primary_key=True)
+    lastapp: str = Field(primary_key=True)
+    clid: str = Field()
+    src: str = Field()
+    dst: str = Field()
+    dcontext: str = Field()
+    channel: str = Field()
+    dstchannel: str = Field()
+    lastdata: str = Field()
+    duration: int = Field()
+    billsec: int = Field()
+    disposition: str = Field()
+    amaflags: int = Field()
+    accountcode: str = Field()
+    userfield: str = Field()
+

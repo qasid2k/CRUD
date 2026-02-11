@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Plus, RefreshCw, Trash2, Edit3, Database } from 'lucide-react';
+import { Search, Plus, RefreshCw, Trash2, Edit3, Database, ChevronUp, ChevronDown } from 'lucide-react';
 import { api } from '../api/client';
 import type { TableSchema } from '../types';
 import Modal from './Modal.tsx';
@@ -19,10 +19,16 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingRecord, setEditingRecord] = useState<any | null>(null);
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+
+    const isReadOnly = useMemo(() => {
+        return ['queue_log', 'cdr'].includes(currentTable.toLowerCase());
+    }, [currentTable]);
 
     const loadTableData = async (tableName: string) => {
         if (!tableName) return;
         setLoading(true);
+        setSortConfig(null); // Reset sort when changing tables
         try {
             const [records, tableSchema] = await Promise.all([
                 api.getTableData(tableName),
@@ -39,14 +45,41 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
     };
 
     const filteredData = useMemo(() => {
-        if (!searchQuery) return data;
-        const lowQuery = searchQuery.toLowerCase();
-        return data.filter(row =>
-            Object.values(row).some(cell =>
-                String(cell).toLowerCase().includes(lowQuery)
-            )
-        );
-    }, [data, searchQuery]);
+        let processed = [...data];
+
+        // 1. Filter
+        if (searchQuery) {
+            const lowQuery = searchQuery.toLowerCase();
+            processed = processed.filter(row =>
+                Object.values(row).some(cell =>
+                    String(cell).toLowerCase().includes(lowQuery)
+                )
+            );
+        }
+
+        // 2. Sort
+        if (sortConfig) {
+            processed.sort((a, b) => {
+                const aVal = a[sortConfig.key];
+                const bVal = b[sortConfig.key];
+
+                if (aVal === bVal) return 0;
+
+                const result = aVal < bVal ? -1 : 1;
+                return sortConfig.direction === 'asc' ? result : -result;
+            });
+        }
+
+        return processed;
+    }, [data, searchQuery, sortConfig]);
+
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
 
     const handleEdit = (record: any) => {
         setEditingRecord(record);
@@ -117,9 +150,11 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                 />
                             </div>
-                            <button className="btn btn-primary" onClick={handleAdd}>
-                                <Plus size={18} /> New Record
-                            </button>
+                            {!isReadOnly && (
+                                <button className="btn btn-primary" onClick={handleAdd}>
+                                    <Plus size={18} /> New Record
+                                </button>
+                            )}
                         </>
                     )}
                     <ThemeToggle />
@@ -151,7 +186,22 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
                         <table>
                             <thead>
                                 <tr>
-                                    {schema?.fields.map(f => <th key={f}>{f}</th>)}
+                                    {schema?.fields.map(f => (
+                                        <th
+                                            key={f}
+                                            onClick={() => handleSort(f)}
+                                            style={{ cursor: 'pointer', userSelect: 'none' }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                {f}
+                                                {sortConfig?.key === f ? (
+                                                    sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                ) : (
+                                                    <ChevronUp size={14} style={{ opacity: 0.2 }} />
+                                                )}
+                                            </div>
+                                        </th>
+                                    ))}
                                     <th style={{ width: '100px' }}></th>
                                 </tr>
                             </thead>
@@ -163,14 +213,16 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
                                                 <td key={f} title={String(row[f])}>{String(row[f])}</td>
                                             ))}
                                             <td>
-                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                                    <button className="btn-icon" onClick={() => handleEdit(row)}>
-                                                        <Edit3 size={14} />
-                                                    </button>
-                                                    <button className="btn-icon" onClick={() => handleDelete(row)} style={{ color: 'var(--danger)' }}>
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                </div>
+                                                {!isReadOnly && (
+                                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                        <button className="btn-icon" onClick={() => handleEdit(row)}>
+                                                            <Edit3 size={14} />
+                                                        </button>
+                                                        <button className="btn-icon" onClick={() => handleDelete(row)} style={{ color: 'var(--danger)' }}>
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     ))

@@ -84,6 +84,7 @@ const CdrReport: React.FC = () => {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [activeTab, setActiveTab] = useState<'heatmap' | 'summary' | 'hourly'>('heatmap');
+    const [availableAgents, setAvailableAgents] = useState<string[]>([]);
 
     /* ---------- fetch data ---------- */
     const fetchData = useCallback(async () => {
@@ -98,13 +99,25 @@ const CdrReport: React.FC = () => {
             } else {
                 result = await api.getCdrSummary(startDate || undefined, endDate || undefined);
             }
+
             setData(result);
+
+            // Persist the agent list when we have all agents or if we don't have a list yet
+            if (result.agents.length > 0) {
+                if (selectedAgent === 'all' || availableAgents.length === 0) {
+                    setAvailableAgents(prev => {
+                        // Merge and sort to ensure we have a unique, complete list
+                        const merged = Array.from(new Set([...prev, ...result.agents]));
+                        return merged.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+                    });
+                }
+            }
         } catch (e: any) {
             setError(e?.message || 'Failed to load CDR data');
         } finally {
             setLoading(false);
         }
-    }, [selectedAgent, startDate, endDate]);
+    }, [selectedAgent, startDate, endDate, availableAgents.length]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -171,7 +184,7 @@ const CdrReport: React.FC = () => {
                         className="cdr-select"
                     >
                         <option value="all">All Agents</option>
-                        {data?.agents.map(a => (
+                        {availableAgents.map(a => (
                             <option key={a} value={a}>Extension {a}</option>
                         ))}
                     </select>

@@ -276,12 +276,13 @@ h1 {
 
 /* Table Voyager Controls */
 .browser-controls {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid var(--border);
+  background: var(--card-bg);
+  border: 1.5px solid var(--border-hover);
   border-radius: 12px;
   padding: 16px 24px;
   margin-bottom: 24px;
   backdrop-filter: blur(8px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 .dropdown-wrapper {
