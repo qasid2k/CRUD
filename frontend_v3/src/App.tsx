@@ -4,10 +4,11 @@ import QueueDashboard from './components/QueueDashboard';
 import TableBrowser from './components/TableBrowser.tsx';
 import CdrReport from './components/CdrReport';
 import Toast from './components/Toast.tsx';
+import Softphone from './components/Softphone';
 import { api } from './api/client';
 import './index.css';
 
-export type Page = 'dashboard' | 'browser' | 'cdr';
+export type Page = 'dashboard' | 'browser' | 'cdr' | 'softphone';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -43,6 +44,8 @@ const App: React.FC = () => {
           <QueueDashboard />
         ) : currentPage === 'cdr' ? (
           <CdrReport />
+        ) : currentPage === 'softphone' ? (
+          <Softphone />
         ) : (
           <TableBrowser
             tables={tables}

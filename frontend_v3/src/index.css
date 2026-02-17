@@ -790,7 +790,19 @@ tr:hover td {
   align-items: center;
   gap: 8px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 10px;
+}
+
+.softphone-page-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  max-width: 360px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .cdr-filter-group label {
@@ -1230,4 +1242,311 @@ tr:hover td {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---- SOFTPHONE SIDE PANEL ---- */
+.softphone-panel {
+  position: fixed;
+  top: 0;
+  right: -320px;
+  width: 320px;
+  height: 100vh;
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(20px);
+  border-left: 1px solid var(--border);
+  transition: right 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.2);
+}
+
+.softphone-panel.open {
+  right: 0;
+}
+
+.softphone-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.softphone-header h2 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-main);
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.registered {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.status-badge.unregistered {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+
+.status-badge.connecting {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+}
+
+.softphone-display {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  text-align: center;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.phone-number-input {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  width: 100%;
+  text-align: center;
+  outline: none;
+  margin-bottom: 4px;
+}
+
+.call-timer {
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.dial-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dial-btn {
+  background: var(--hover-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.dial-btn:hover {
+  background: var(--row-hover);
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+
+.dial-btn:active {
+  transform: scale(0.95);
+}
+
+.dial-sub {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.softphone-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.action-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.btn-call {
+  background: var(--success);
+  color: white;
+}
+
+.btn-call:hover {
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+  filter: brightness(1.1);
+}
+
+.btn-hangup {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-hangup:hover {
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+  filter: brightness(1.1);
+}
+
+.btn-util {
+  background: var(--hover-bg);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+}
+
+.softphone-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 999;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s;
+}
+
+.softphone-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.softphone-toggle {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 10px 25px var(--primary-glow);
+  z-index: 500;
+  transition: all 0.3s;
+}
+
+.softphone-toggle:hover {
+  transform: scale(1.1) rotate(15deg);
+  filter: brightness(1.1);
+}
+
+.softphone-settings {
+  position: fixed;
+  top: 0;
+  right: -320px;
+  width: 320px;
+  height: 100vh;
+  background: var(--sidebar-bg);
+  background-image: radial-gradient(circle at top left, var(--gradient-start) 0%, transparent 100%);
+  backdrop-filter: blur(12px);
+  border-left: 1px solid var(--border);
+  padding: 30px 24px;
+  z-index: 1100;
+  transition: right 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.4);
+}
+
+.softphone-settings.open {
+  right: 0;
+}
+
+.settings-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  z-index: 1050;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s;
+}
+
+.settings-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.settings-input-group {
+  margin-bottom: 20px;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 30px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-header h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 18px;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+.settings-input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text-main);
+  margin: 5px 0 10px;
+  outline: none;
+}
+
+.settings-label {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
 }
