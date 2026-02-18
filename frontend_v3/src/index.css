@@ -1550,3 +1550,23 @@ tr:hover td {
   text-transform: uppercase;
   font-size: 10px;
 }
+
+.ringing-pulse {
+  animation: ringing-bg-pulse 1.5s infinite ease-in-out;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
+}
+
+@keyframes ringing-bg-pulse {
+  0% {
+    background-color: transparent;
+  }
+
+  50% {
+    background-color: rgba(6, 182, 212, 0.05);
+  }
+
+  100% {
+    background-color: transparent;
+  }
+}

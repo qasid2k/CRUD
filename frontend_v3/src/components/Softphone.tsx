@@ -9,6 +9,8 @@ const Softphone: React.FC = () => {
     const [isCalling, setIsCalling] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [callDuration, setCallDuration] = useState(0);
+    const [callStatus, setCallStatus] = useState<'idle' | 'dialing' | 'ringing' | 'active' | 'incoming'>('idle');
+    const [incomingCaller, setIncomingCaller] = useState<string>('');
     const [showSettings, setShowSettings] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
@@ -24,9 +26,15 @@ const Softphone: React.FC = () => {
     const sessionRef = useRef<any>(null);
     const timerRef = useRef<number | null>(null);
     const audioRemoteRef = useRef<HTMLAudioElement | null>(null);
+    const ringtoneCtxRef = useRef<AudioContext | null>(null);
 
     // Initialize UA
     const initUA = useCallback(() => {
+        // If already registered, don't restart
+        if (uaRef.current && uaRef.current.isRegistered()) {
+            return;
+        }
+
         if (uaRef.current) {
             uaRef.current.stop();
         }
@@ -36,7 +44,12 @@ const Softphone: React.FC = () => {
             sockets: [socket],
             uri: `sip:${sipConfig.extension}@${sipConfig.domain}`,
             password: sipConfig.password,
-            display_name: `Extension ${sipConfig.extension}`
+            display_name: `Extension ${sipConfig.extension}`,
+            register: true,
+            register_expires: 600,
+            session_timers: true,
+            connection_recovery_min_interval: 5,
+            connection_recovery_max_interval: 30
         };
 
         const ua = new JsSIP.UA(configuration);
@@ -44,9 +57,11 @@ const Softphone: React.FC = () => {
 
         ua.on('connecting', () => setStatus('connecting'));
         ua.on('connected', () => console.log('SIP Connected'));
-        ua.on('disconnected', () => setStatus('unregistered'));
-        ua.on('registered', () => setStatus('registered'));
-        ua.on('unregistered', () => setStatus('unregistered'));
+        ua.on('registered', () => {
+            console.log('SIP Registered Successfully');
+            setStatus('registered');
+        });
+
         ua.on('registrationFailed', (e: any) => {
             console.error('Registration failed:', e.cause);
             setStatus('unregistered');
@@ -57,34 +72,39 @@ const Softphone: React.FC = () => {
             sessionRef.current = session;
 
             if (session.direction === 'incoming') {
-                console.log('Incoming call');
-                // Handle incoming call (auto-answer or show UI)
+                setCallStatus('incoming');
+                setIncomingCaller(session.remote_identity.display_name || session.remote_identity.uri.user);
             }
 
-            session.on('connecting', () => console.log('Call connecting'));
-            session.on('peerconnection', () => console.log('Pair connection established'));
+            session.on('peerconnection', (data: any) => {
+                const pc = data.peerconnection;
+                pc.ontrack = (e: RTCTrackEvent) => {
+                    if (audioRemoteRef.current) {
+                        const remoteStream = e.streams[0] || new MediaStream([e.track]);
+                        audioRemoteRef.current.srcObject = remoteStream;
+                        audioRemoteRef.current.play().catch(console.warn);
+                    }
+                };
+            });
+
+            session.on('connecting', () => {
+                if (session.direction === 'outgoing') setCallStatus('dialing');
+            });
+            session.on('progress', () => {
+                if (session.direction === 'outgoing') setCallStatus('ringing');
+            });
 
             session.on('accepted', () => {
-                console.log('Call accepted');
+                setCallStatus('active');
                 setIsCalling(true);
                 startTimer();
             });
 
-            session.on('ended', () => {
-                console.log('Call ended');
-                handleCallEnd();
-            });
-
+            session.on('confirmed', () => setCallStatus('active'));
+            session.on('ended', () => handleCallEnd());
             session.on('failed', (e: any) => {
                 console.error('Call failed:', e.cause);
                 handleCallEnd();
-            });
-
-            session.on('addstream', (e: any) => {
-                if (audioRemoteRef.current) {
-                    audioRemoteRef.current.srcObject = e.stream;
-                    audioRemoteRef.current.play();
-                }
             });
         });
 
@@ -93,6 +113,7 @@ const Softphone: React.FC = () => {
 
     const handleCallEnd = () => {
         setIsCalling(false);
+        setCallStatus('idle');
         stopTimer();
         setCallDuration(0);
         sessionRef.current = null;
@@ -110,6 +131,67 @@ const Softphone: React.FC = () => {
             timerRef.current = null;
         }
     };
+
+    const playRingtone = () => {
+        if (ringtoneCtxRef.current) return;
+
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        ringtoneCtxRef.current = ctx;
+
+        const playPulse = (startTime: number) => {
+            if (!ringtoneCtxRef.current) return;
+
+            const osc1 = ctx.createOscillator();
+            const osc2 = ctx.createOscillator();
+            const gainNode = ctx.createGain();
+
+            osc1.type = 'sine';
+            osc2.type = 'sine';
+            osc1.frequency.setValueAtTime(440, startTime);
+            osc2.frequency.setValueAtTime(480, startTime);
+
+            gainNode.gain.setValueAtTime(0, startTime);
+            gainNode.gain.linearRampToValueAtTime(0.2, startTime + 0.1);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.8);
+
+            osc1.connect(gainNode);
+            osc2.connect(gainNode);
+            gainNode.connect(ctx.destination);
+
+            osc1.start(startTime);
+            osc2.start(startTime);
+            osc1.stop(startTime + 2);
+            osc2.stop(startTime + 2);
+        };
+
+        // Ring pattern: 2 seconds on, 2 seconds off
+        let time = ctx.currentTime;
+        const interval = setInterval(() => {
+            if (!ringtoneCtxRef.current) {
+                clearInterval(interval);
+                return;
+            }
+            playPulse(ctx.currentTime);
+        }, 4000);
+
+        playPulse(time); // Initial ring
+    };
+
+    const stopRingtone = () => {
+        if (ringtoneCtxRef.current) {
+            ringtoneCtxRef.current.close();
+            ringtoneCtxRef.current = null;
+        }
+    };
+
+    useEffect(() => {
+        if (callStatus === 'incoming') {
+            playRingtone();
+        } else {
+            stopRingtone();
+        }
+        return () => stopRingtone();
+    }, [callStatus]);
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
@@ -130,8 +212,20 @@ const Softphone: React.FC = () => {
         const options = {
             mediaConstraints: { audio: true, video: false },
             pcConfig: {
-                iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }]
-            }
+                iceServers: [
+                    { urls: ['stun:stun.l.google.com:19302'] },
+                    { urls: ['stun:stun1.l.google.com:19302'] }
+                ],
+                // Force faster ICE gathering
+                iceCandidatePoolSize: 10
+            },
+            rtcOfferConstraints: {
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: false
+            },
+            // Reduce the time the browser waits for ICE candidates
+            // Default is often 5-10 seconds; we reduce it for a snappier feel
+            iceGatheringTimeout: 1000
         };
 
         uaRef.current.call(`sip:${phoneNumber}@${sipConfig.domain}`, options);
@@ -139,6 +233,20 @@ const Softphone: React.FC = () => {
 
     const hangupCall = () => {
         if (sessionRef.current) {
+            sessionRef.current.terminate();
+        }
+    };
+
+    const answerCall = () => {
+        if (sessionRef.current && callStatus === 'incoming') {
+            sessionRef.current.answer({
+                mediaConstraints: { audio: true, video: false }
+            });
+        }
+    };
+
+    const rejectCall = () => {
+        if (sessionRef.current && callStatus === 'incoming') {
             sessionRef.current.terminate();
         }
     };
@@ -162,13 +270,13 @@ const Softphone: React.FC = () => {
         if (!isCalling) setPhoneNumber(prev => prev.slice(0, -1));
     };
 
-    // Re-init UA when settings change
+    // Init UA when component mounts
     useEffect(() => {
-        // initUA(); // Commented out to prevent immediate connection in dev
+        initUA();
         return () => {
             if (uaRef.current) uaRef.current.stop();
         };
-    }, []);
+    }, [initUA]);
 
     return (
         <div className="content-area">
@@ -274,16 +382,33 @@ const Softphone: React.FC = () => {
 
                 <div className="softphone-display">
                     <input
-                        className="phone-number-input"
-                        value={phoneNumber}
+                        className={`phone-number-input ${callStatus === 'ringing' || callStatus === 'incoming' ? 'ringing-pulse' : ''}`}
+                        value={callStatus === 'incoming' ? `📞 ${incomingCaller}` : phoneNumber}
                         onChange={e => setPhoneNumber(e.target.value)}
                         placeholder="Dial Number"
-                        readOnly={isCalling}
+                        readOnly={isCalling || callStatus !== 'idle'}
                     />
                     {isCalling && <div className="call-timer">{formatTime(callDuration)}</div>}
-                    {!isCalling && phoneNumber && (
-                        <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Ready to call</div>
-                    )}
+                    <div style={{
+                        color: callStatus === 'ringing' || callStatus === 'incoming' ? 'var(--accent)' :
+                            callStatus === 'active' ? 'var(--success)' :
+                                callStatus === 'dialing' ? 'var(--primary)' : 'var(--text-muted)',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        marginTop: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        justifyContent: 'center',
+                        height: '20px'
+                    }}>
+                        {callStatus === 'dialing' && <RefreshCw size={14} className="animate-spin" />}
+                        {callStatus === 'dialing' && 'Connecting...'}
+                        {callStatus === 'ringing' && '🔔 Ringing...'}
+                        {callStatus === 'incoming' && '📱 Incoming Call...'}
+                        {callStatus === 'active' && '📞 Call Active'}
+                        {callStatus === 'idle' && phoneNumber && 'Ready to call'}
+                    </div>
                 </div>
 
                 <div className="dial-pad">
@@ -301,7 +426,16 @@ const Softphone: React.FC = () => {
                 </div>
 
                 <div className="softphone-actions">
-                    {isCalling ? (
+                    {callStatus === 'incoming' ? (
+                        <>
+                            <button className="action-btn btn-hangup" onClick={rejectCall} style={{ flex: 1 }}>
+                                <PhoneOff size={20} /> Reject
+                            </button>
+                            <button className="action-btn btn-call" onClick={answerCall} style={{ flex: 1 }}>
+                                <Phone size={20} /> Answer
+                            </button>
+                        </>
+                    ) : (callStatus === 'dialing' || callStatus === 'ringing' || callStatus === 'active') ? (
                         <>
                             <button className="action-btn btn-util" onClick={toggleMute}>
                                 {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
@@ -325,8 +459,8 @@ const Softphone: React.FC = () => {
                     )}
                 </div>
 
-                {/* Remote Audio */}
-                <audio ref={audioRemoteRef} autoPlay />
+                {/* Remote Audio - PlaysInline is critical for mobile and some desktop browsers */}
+                <audio ref={audioRemoteRef} playsInline />
             </div>
         </div>
     );

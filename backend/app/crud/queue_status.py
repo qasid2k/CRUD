@@ -98,20 +98,25 @@ class QueueStatusManager:
                     if event.get("Event") == "StatusComplete": break
                     if event.get("Event") == "Status":
                         chan = event.get("Channel", "")
-                        p_num = event.get("ConnectedLineNum") or event.get("CallerIDNum")
-                        p_name = event.get("ConnectedLineName") or event.get("CallerIDName")
-                        if p_num and p_num != "<unknown>":
-                            channel_map[chan.lower()] = {
-                                "num": p_num,
-                                "name": p_name if p_name and p_name != "<unknown>" else "",
-                                "application": event.get("Application", ""),
-                                "data": event.get("Data", ""),
-                                "state": event.get("ChannelStateDesc", ""),
-                                # For a channel PJSIP/102-xxx, the "Other side" is usually ConnectedLine
-                                # but if that's empty, we check the other way.
-                                "connected_line": event.get("ConnectedLineNum", ""),
-                                "caller_id": event.get("CallerIDNum", "")
-                            }
+                        state = event.get("ChannelStateDesc", "")
+                        
+                        # Only track channels that are actually 'Up' (talking)
+                        if state.lower() == "up":
+                            p_num = event.get("ConnectedLineNum") or event.get("CallerIDNum")
+                            p_name = event.get("ConnectedLineName") or event.get("CallerIDName")
+                            if p_num and p_num != "<unknown>":
+                                channel_map[chan.lower()] = {
+                                    "num": p_num,
+                                    "name": p_name if p_name and p_name != "<unknown>" else "",
+                                    "application": event.get("Application", ""),
+                                    "data": event.get("Data", ""),
+                                    "state": state,
+                                    "connected_line": event.get("ConnectedLineNum", ""),
+                                    "caller_id": event.get("CallerIDNum", "")
+                                }
+                        else:
+                            # Log discarded inactive channels for debugging if needed
+                            pass
 
                 # Get Queue Status
                 self.writer.write(b"Action: QueueStatus\r\n\r\n")
@@ -171,8 +176,9 @@ class QueueStatusManager:
                             
                             for chan_key, details in channel_map.items():
                                 # Check for bridged call (talking to)
-                                # We check if the interface (e.g. PJSIP/102) is inside the channel name (e.g. pjsip/102-00001)
-                                if interface and interface.lower() in chan_key:
+                                # Precise match: Channel name should start with the interface name
+                                # e.g. 'pjsip/102-00001' starts with 'pjsip/102'
+                                if interface and chan_key.startswith(interface.lower()):
                                     # Regular call logic - ignore ChanSpy
                                     if details.get("application") != "ChanSpy":
                                         # Use the logic: If I am PJSIP/102, I want to show the OTHER person.
