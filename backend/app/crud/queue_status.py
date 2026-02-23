@@ -168,7 +168,9 @@ class QueueStatusManager:
                             
                             if is_paused:
                                 status_label = "paused"
-                            elif status_code in [1, 6]:
+                            elif status_code == 6:
+                                status_label = "ringing"
+                            elif status_code == 1:
                                 status_label = "online"
                             elif status_code in [2, 3, 7, 8]:
                                 status_label = "busy"
