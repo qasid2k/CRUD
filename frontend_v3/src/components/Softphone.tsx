@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, Settings, X, History, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Settings, X, RefreshCw, Eye, EyeOff, Delete } from 'lucide-react';
 import * as JsSIP from 'jssip';
 import ThemeToggle from './ThemeToggle';
 
@@ -27,6 +27,7 @@ const Softphone: React.FC = () => {
     const timerRef = useRef<number | null>(null);
     const audioRemoteRef = useRef<HTMLAudioElement | null>(null);
     const ringtoneCtxRef = useRef<AudioContext | null>(null);
+    const backspaceTimerRef = useRef<any>(null);
 
     // Initialize UA
     const initUA = useCallback(() => {
@@ -270,6 +271,22 @@ const Softphone: React.FC = () => {
         if (!isCalling) setPhoneNumber(prev => prev.slice(0, -1));
     };
 
+    const startBackspaceTimer = () => {
+        if (isCalling) return;
+        handleBackspace();
+        backspaceTimerRef.current = setTimeout(() => {
+            clearNumber();
+            backspaceTimerRef.current = null;
+        }, 700);
+    };
+
+    const stopBackspaceTimer = () => {
+        if (backspaceTimerRef.current) {
+            clearTimeout(backspaceTimerRef.current);
+            backspaceTimerRef.current = null;
+        }
+    };
+
     // Init UA when component mounts
     useEffect(() => {
         initUA();
@@ -290,7 +307,7 @@ const Softphone: React.FC = () => {
                         <span className={`status-badge ${status}`}>
                             {status}
                         </span>
-                        <button className="btn btn-icon" onClick={() => setShowSettings(!showSettings)} title="SIP Settings">
+                        <button className="btn btn-icon" onClick={() => setShowSettings(!showSettings)} title="WebRTC Settings">
                             <Settings size={20} />
                         </button>
                     </div>
@@ -309,7 +326,7 @@ const Softphone: React.FC = () => {
 
                 <div className={`softphone-settings ${showSettings ? 'open' : ''}`}>
                     <div className="settings-header">
-                        <h3><Settings size={20} /> SIP Settings</h3>
+                        <h3><Settings size={20} /> WebRTC Settings</h3>
                         <button className="btn btn-icon" onClick={() => setShowSettings(false)}>
                             <X size={20} />
                         </button>
@@ -446,14 +463,19 @@ const Softphone: React.FC = () => {
                         </>
                     ) : (
                         <>
-                            <button className="action-btn btn-util" onClick={handleBackspace}>
-                                <History size={18} />
-                            </button>
+                            <div style={{ width: '48px' }} /> {/* Spacer to keep Call button centered */}
                             <button className="action-btn btn-call" onClick={makeCall}>
                                 <Phone size={20} /> Call
                             </button>
-                            <button className="action-btn btn-util" onClick={clearNumber}>
-                                <X size={18} />
+                            <button
+                                className="action-btn btn-util"
+                                onMouseDown={startBackspaceTimer}
+                                onMouseUp={stopBackspaceTimer}
+                                onMouseLeave={stopBackspaceTimer}
+                                onTouchStart={startBackspaceTimer}
+                                onTouchEnd={stopBackspaceTimer}
+                            >
+                                <Delete size={20} />
                             </button>
                         </>
                     )}

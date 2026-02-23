@@ -58,12 +58,20 @@ class QueueStatusManager:
                 self.writer = None
 
         # Reconnect
-        self.reader, self.writer = await asyncio.wait_for(
-            asyncio.open_connection(AMI_HOST, AMI_PORT), timeout=5
-        )
-        await self.reader.readline() # banner
+        print(f"AMI: Connecting to {AMI_HOST}:{AMI_PORT}...")
+        try:
+            self.reader, self.writer = await asyncio.wait_for(
+                asyncio.open_connection(AMI_HOST, AMI_PORT), timeout=5
+            )
+            print(f"AMI: Connected! Sending Login for user '{AMI_USER}'...")
+        except Exception as e:
+            print(f"AMI: FAILED to connect to {AMI_HOST}:{AMI_PORT} - {e}")
+            raise e
+
+        banner = await self.reader.readline()
+        print(f"AMI: Received Banner: {banner.decode().strip()}")
         
-        # LOGIN with Events: Off to avoid buffer filling up with unsolicited events
+        # LOGIN with Events: Off 
         login_cmd = (
             f"Action: Login\r\n"
             f"Username: {AMI_USER}\r\n"
@@ -72,8 +80,15 @@ class QueueStatusManager:
         )
         self.writer.write(login_cmd.encode())
         await self.writer.drain()
-        await self._read_until_delimiter(self.reader)
-        print("AMI: NEW session established (Events: Off).")
+        
+        resp = await self._read_until_delimiter(self.reader)
+        if "Response: Success" in resp:
+            print(f"AMI: Authentication SUCCESS for user '{AMI_USER}'. Ready.")
+        else:
+            print(f"AMI: Authentication FAILED for user '{AMI_USER}'. Response: {resp.strip()}")
+            self.writer.close()
+            self.writer = None
+            return
 
     async def get_queue_status(self):
         """

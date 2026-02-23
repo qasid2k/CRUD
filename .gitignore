@@ -1,3 +1,24 @@
+# Credentials & Secrets (CRITICAL)
+.env
 backend/.env
-/backend/app/__pycache__
-/backend/app/crud/__pycache__
+
+# Python (Backend)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.pytest_cache/
+
+# Node (Frontend)
+node_modules/
+dist/
+build/
+.eslintcache
+
+# Docker
+.docker_temp/
+
+# OS Specific
+.DS_Store
+Thumbs.db
