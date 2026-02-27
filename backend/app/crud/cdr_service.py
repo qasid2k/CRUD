@@ -17,9 +17,9 @@ from collections import defaultdict
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
-from sqlmodel import Session, text
-
+from sqlmodel import Session, text, select
 from ..database import engine
+from ..models import PsEndpoints
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +57,7 @@ def _aggregate(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     agent_filter: Optional[str] = None,
+    queue_filter: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Query queue_log and build aggregation structures.
@@ -84,6 +85,9 @@ def _aggregate(
     if agent_filter:
         conditions.append("(agent LIKE :agent_pattern)")
         params["agent_pattern"] = f"%{agent_filter}%"
+    if queue_filter:
+        conditions.append("(queuename = :queue)")
+        params["queue"] = queue_filter
 
     where = " AND ".join(conditions)
 
@@ -113,7 +117,7 @@ def _aggregate(
         lambda: defaultdict(lambda: defaultdict(float))
     )
 
-    # agent_stats[agent_ext] = { total_calls, total_duration, answered, abandoned, ... }
+    # Initialize with all configured agents to ensure they show up even with 0 calls
     agent_stats: Dict[str, Dict[str, Any]] = defaultdict(
         lambda: {
             "total_calls": 0,
@@ -125,13 +129,25 @@ def _aggregate(
             "failed": 0,
         }
     )
+    all_agents: set = set()
+    
+    try:
+        with Session(engine) as session:
+            endpoints = session.exec(select(PsEndpoints.id)).all()
+            for eid in endpoints:
+                ext = str(eid)
+                all_agents.add(ext)
+                # This touch ensures they exist in agent_stats with default values
+                _ = agent_stats[ext]
+    except Exception as e:
+        print(f"Error fetching extensions: {e}")
 
     # hourly_volume[hour] = count of events (CONNECT / COMPLETEAGENT / COMPLETECALLER)
     hourly_volume: Dict[int, int] = defaultdict(int)
 
-    # all dates seen (for building complete date axis)
+    # all dates/agents/queues seen
     all_dates: set = set()
-    all_agents: set = set()
+    all_queues: set = set()
 
     for row in rows:
         ts_str = str(row[0])  # time
@@ -162,6 +178,8 @@ def _aggregate(
         date_str = dt.strftime("%Y-%m-%d")
         hour = dt.hour
         all_dates.add(date_str)
+        if row[2]: # queuename
+            all_queues.add(str(row[2]))
 
         if ext and ext != "Unknown":
             all_agents.add(ext)
@@ -188,22 +206,54 @@ def _aggregate(
         elif event == "ABANDON":
             # Caller abandoned
             if ext and ext != "Unknown":
+                agent_stats[ext]["total_calls"] += 1
                 agent_stats[ext]["abandoned"] += 1
             # Count in hourly volume too
             hourly_volume[hour] += 1
 
         elif event == "RINGNOANSWER":
             if ext and ext != "Unknown":
+                agent_stats[ext]["total_calls"] += 1
                 agent_stats[ext]["no_answer"] += 1
 
         elif event in ("BUSY",):
             if ext and ext != "Unknown":
+                agent_stats[ext]["total_calls"] += 1
                 agent_stats[ext]["busy"] += 1
 
     # -----------------------------------------------------------------------
-    # Build sorted output
+    # Build sorted output (Fill in missing dates to ensure a continuous timeline)
     # -----------------------------------------------------------------------
-    sorted_dates = sorted(all_dates)
+    if not all_dates:
+        return _empty_result()
+
+    # Determine the 7-day window to display
+    if not start_date and not end_date:
+        # Default view: Current week (Monday to Sunday)
+        today = date.today()
+        start_dt = today - timedelta(days=today.weekday())  # Back to Monday
+        end_dt = start_dt + timedelta(days=6)               # Forward to Sunday
+        range_start = start_dt.isoformat()
+        range_end = end_dt.isoformat()
+    else:
+        # If user explicitly filtered, use their range
+        range_start = start_date if start_date else min(all_dates)
+        range_end = end_date if end_date else max(all_dates)
+
+    try:
+        start_dt = date.fromisoformat(range_start)
+        end_dt = date.fromisoformat(range_end)
+    except Exception:
+        # Fallback to DB bounds if parsing fails
+        start_dt = date.fromisoformat(min(all_dates))
+        end_dt = date.fromisoformat(max(all_dates))
+
+    sorted_dates = []
+    curr = start_dt
+    while curr <= end_dt:
+        sorted_dates.append(curr.isoformat())
+        curr += timedelta(days=1)
+
     sorted_agents = sorted(all_agents)
 
     # Build heatmap data: list of {agent, date, hours: {0..23: minutes}, total_minutes}
@@ -244,6 +294,7 @@ def _aggregate(
 
     return {
         "agents": sorted_agents,
+        "queues": sorted(all_queues),
         "dates": sorted_dates,
         "heatmap": heatmap_data,
         "agent_summary": agent_summary,
@@ -256,6 +307,7 @@ def _aggregate(
 def _empty_result() -> Dict[str, Any]:
     return {
         "agents": [],
+        "queues": [],
         "dates": [],
         "heatmap": [],
         "agent_summary": [],
@@ -271,15 +323,16 @@ def _empty_result() -> Dict[str, Any]:
 def get_cdr_summary(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    queue: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return aggregated CDR data, using cache when available."""
-    cache_key = f"summary:{start_date}:{end_date}"
+    cache_key = f"summary:{start_date}:{end_date}:{queue}"
 
     if _is_cache_valid() and cache_key in _cache:
         return _cache[cache_key]
 
     global _cache_ts
-    data = _aggregate(start_date=start_date, end_date=end_date)
+    data = _aggregate(start_date=start_date, end_date=end_date, queue_filter=queue)
     _cache[cache_key] = data
     _cache_ts = time.time()
     return data
@@ -298,9 +351,9 @@ def get_agent_report(
     )
 
 
-def get_time_range_report(start_date: str, end_date: str) -> Dict[str, Any]:
+def get_time_range_report(start_date: str, end_date: str, queue: Optional[str] = None) -> Dict[str, Any]:
     """Return CDR data for a specific date range."""
-    return get_cdr_summary(start_date=start_date, end_date=end_date)
+    return get_cdr_summary(start_date=start_date, end_date=end_date, queue=queue)
 
 
 def refresh_aggregation():

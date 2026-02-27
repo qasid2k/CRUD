@@ -70,7 +70,7 @@ const QueueDashboard: React.FC = () => {
     return (
         <div className="dashboard-section">
             <header className="top-bar">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                <div className="header-title-search">
                     <h1>Live Queues</h1>
                     <div className="search-box">
                         <Search className="search-box-icon" />
@@ -101,7 +101,7 @@ const QueueDashboard: React.FC = () => {
                             exit={{ opacity: 0, scale: 0.9 }}
                             className="queue-card"
                         >
-                            <div className="queue-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+                            <div className="queue-header">
                                 <div>
                                     <h3 style={{ fontSize: '20px', fontWeight: 700 }}>{q.name}</h3>
                                     <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{q.strategy}</span>
@@ -111,7 +111,7 @@ const QueueDashboard: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                            <div className="queue-stats-primary">
                                 <div>
                                     <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Answered</div>
                                     <div style={{ fontSize: '28px', fontWeight: 700 }}>{q.answered}</div>

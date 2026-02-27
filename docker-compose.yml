@@ -12,6 +12,9 @@ services:
       - AMI_USER=${AMI_USER}
       - AMI_PASS=${AMI_PASS}
       - TABLE_NAMES=${TABLE_NAMES}
+      - RECORDINGS_PATH=/var/spool/asterisk/monitor
+    volumes:
+      - /var/spool/asterisk/monitor:/var/spool/asterisk/monitor
     ports:
       - "8000:8000"
 

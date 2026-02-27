@@ -19,12 +19,13 @@ router = APIRouter(prefix="/cdr", tags=["CDR Reports"])
 async def cdr_summary(
     start: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    queue: Optional[str] = Query(None, description="Queue name filter"),
 ):
     """
     Returns aggregated CDR data: heatmap, agent summaries, hourly volume.
     If no dates provided, returns all available data.
     """
-    return cdr_service.get_cdr_summary(start_date=start, end_date=end)
+    return cdr_service.get_cdr_summary(start_date=start, end_date=end, queue=queue)
 
 
 @router.get("/agent/{agent_id}")
@@ -41,9 +42,10 @@ async def cdr_agent(
 async def cdr_time_range(
     start: str = Query(..., description="Start date (YYYY-MM-DD)"),
     end: str = Query(..., description="End date (YYYY-MM-DD)"),
+    queue: Optional[str] = Query(None, description="Queue name filter"),
 ):
     """Returns CDR data for a specific date range."""
-    return cdr_service.get_time_range_report(start_date=start, end_date=end)
+    return cdr_service.get_time_range_report(start_date=start, end_date=end, queue=queue)
 
 
 @router.post("/refresh")

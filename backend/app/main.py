@@ -1,10 +1,10 @@
-# Triggering reload
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .crud import routes as crud_routes
 from .crud import cdr_routes
+from .crud import recordings_routes
 from .crud import service as crud_service
 from .crud import cdr_service
 
@@ -59,6 +59,9 @@ app.include_router(crud_routes.router, tags=["CRUD"], prefix="/api")
 
 # Include CDR report routes under /api
 app.include_router(cdr_routes.router, tags=["CDR Reports"], prefix="/api")
+
+# Include Recordings routes under /api
+app.include_router(recordings_routes.router, tags=["Recordings"], prefix="/api")
 
 
 @app.get("/")

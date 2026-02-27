@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Plus, RefreshCw, Trash2, Edit3, Database, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, Plus, RefreshCw, Trash2, Edit3, Database, ChevronUp, ChevronDown, Play } from 'lucide-react';
 import { api } from '../api/client';
 import type { TableSchema } from '../types';
 import Modal from './Modal.tsx';
@@ -210,7 +210,25 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
                                     filteredData.map((row, idx) => (
                                         <tr key={idx}>
                                             {schema?.fields.map(f => (
-                                                <td key={f} title={String(row[f])}>{String(row[f])}</td>
+                                                <td key={f} title={String(row[f])}>
+                                                    {f === 'uniqueid' && ['cdr', 'queue_log'].includes(currentTable.toLowerCase()) ? (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <span>{String(row[f])}</span>
+                                                            <button
+                                                                className="btn-icon"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const filename = row.userfield || `${row.uniqueid}.wav`;
+                                                                    window.open(api.getRecordingUrl(filename), '_blank');
+                                                                }}
+                                                                title="Play Recording"
+                                                                style={{ color: '#10b981', padding: '2px' }}
+                                                            >
+                                                                <Play size={14} fill="#10b981" />
+                                                            </button>
+                                                        </div>
+                                                    ) : String(row[f])}
+                                                </td>
                                             ))}
                                             <td>
                                                 {!isReadOnly && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { RefreshCw, Calendar, User, Clock, Phone, PhoneOff, PhoneMissed, BarChart3, Filter } from 'lucide-react';
+import { RefreshCw, Calendar, User, Clock, Phone, PhoneOff, PhoneMissed, BarChart3, Filter, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import { api } from '../api/client';
 import ThemeToggle from './ThemeToggle';
 
@@ -32,6 +32,7 @@ interface HourlyVolume {
 
 interface CdrData {
     agents: string[];
+    queues: string[];
     dates: string[];
     heatmap: HeatmapRow[];
     agent_summary: AgentSummary[];
@@ -81,10 +82,12 @@ const CdrReport: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [selectedAgent, setSelectedAgent] = useState<string>('all');
+    const [selectedQueue, setSelectedQueue] = useState<string>('all');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [activeTab, setActiveTab] = useState<'heatmap' | 'summary' | 'hourly'>('heatmap');
     const [availableAgents, setAvailableAgents] = useState<string[]>([]);
+    const [availableQueues, setAvailableQueues] = useState<string[]>([]);
 
     /* ---------- fetch data ---------- */
     const fetchData = useCallback(async () => {
@@ -95,12 +98,20 @@ const CdrReport: React.FC = () => {
             if (selectedAgent !== 'all') {
                 result = await api.getCdrAgent(selectedAgent, startDate || undefined, endDate || undefined);
             } else if (startDate && endDate) {
-                result = await api.getCdrTimeRange(startDate, endDate);
+                result = await api.getCdrTimeRange(startDate, endDate, selectedQueue !== 'all' ? selectedQueue : undefined);
             } else {
-                result = await api.getCdrSummary(startDate || undefined, endDate || undefined);
+                result = await api.getCdrSummary(startDate || undefined, endDate || undefined, selectedQueue !== 'all' ? selectedQueue : undefined);
             }
 
             setData(result);
+
+            // Persist the queue list
+            if (result.queues.length > 0) {
+                setAvailableQueues(prev => {
+                    const merged = Array.from(new Set([...prev, ...result.queues]));
+                    return merged.sort();
+                });
+            }
 
             // Persist the agent list when we have all agents or if we don't have a list yet
             if (result.agents.length > 0) {
@@ -117,7 +128,7 @@ const CdrReport: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [selectedAgent, startDate, endDate, availableAgents.length]);
+    }, [selectedAgent, selectedQueue, startDate, endDate, availableAgents.length]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -144,7 +155,51 @@ const CdrReport: React.FC = () => {
         return data.agents;
     }, [data, selectedAgent]);
 
+    const rangeLabel = useMemo(() => {
+        if (loading) return 'Loading...';
+        if (!data || !data.dates || data.dates.length === 0) return 'No data';
+
+        const start = data.dates[0];
+        const end = data.dates[data.dates.length - 1];
+
+        const formatDateShort = (dStr: string) => {
+            const d = new Date(dStr + 'T00:00:00');
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        };
+
+        const year = new Date(start + 'T00:00:00').getFullYear();
+        return `${formatDateShort(start)} - ${formatDateShort(end)}, ${year}`;
+    }, [data, loading]);
+
     const hours = Array.from({ length: 24 }, (_, i) => i);
+
+    /* ---------- week navigation ---------- */
+    const shiftWeek = (direction: 'prev' | 'next') => {
+        // Find current start or default to today
+        const baseDate = startDate ? new Date(startDate + 'T00:00:00') : new Date();
+
+        // Find the Monday of that week
+        const currentMonday = new Date(baseDate);
+        const day = currentMonday.getDay(); // 0 is Sunday, 1 is Monday...
+        const diff = (day === 0 ? -6 : 1 - day); // Distance to Monday
+        currentMonday.setDate(currentMonday.getDate() + diff);
+
+        const offset = direction === 'next' ? 7 : -7;
+        const newStart = new Date(currentMonday);
+        newStart.setDate(newStart.getDate() + offset);
+
+        const newEnd = new Date(newStart);
+        newEnd.setDate(newEnd.getDate() + 6);
+
+        setStartDate(newStart.toISOString().split('T')[0]);
+        setEndDate(newEnd.toISOString().split('T')[0]);
+    };
+
+    const resetToThisWeek = () => {
+        setStartDate('');
+        setEndDate('');
+        setSelectedQueue('all');
+    };
 
     /* ---------- manual refresh ---------- */
     const handleRefresh = async () => {
@@ -191,6 +246,24 @@ const CdrReport: React.FC = () => {
                 </div>
 
                 <div className="cdr-filter-group">
+                    <Layers size={16} />
+                    <label>Queue:</label>
+                    <select
+                        value={selectedQueue}
+                        onChange={e => {
+                            setSelectedQueue(e.target.value);
+                            setSelectedAgent('all'); // Reset agent when queue changes
+                        }}
+                        className="cdr-select"
+                    >
+                        <option value="all">All Queues</option>
+                        {availableQueues.map(q => (
+                            <option key={q} value={q}>{q}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className="cdr-filter-group">
                     <Calendar size={16} />
                     <label>From:</label>
                     <input
@@ -206,6 +279,26 @@ const CdrReport: React.FC = () => {
                         onChange={e => setEndDate(e.target.value)}
                         className="cdr-input"
                     />
+                </div>
+
+                <div className="cdr-filter-group" style={{ marginLeft: 'auto' }}>
+                    <div className="cdr-nav-container">
+                        <div className="cdr-nav-group">
+                            <button className="cdr-nav-btn" onClick={() => shiftWeek('prev')} title="Previous Week">
+                                <ChevronLeft size={18} />
+                            </button>
+                            <button className={`cdr-nav-btn today ${!startDate ? 'active' : ''}`} onClick={resetToThisWeek}>
+                                This Week
+                            </button>
+                            <button className="cdr-nav-btn" onClick={() => shiftWeek('next')} title="Next Week">
+                                <ChevronRight size={18} />
+                            </button>
+                        </div>
+                        <div className="cdr-nav-label">
+                            <Calendar size={14} />
+                            <span>{rangeLabel}</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 

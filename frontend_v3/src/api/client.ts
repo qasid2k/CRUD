@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = `http://${window.location.hostname}:8000`;
 
 const client = axios.create({
     baseURL: API_URL,
@@ -43,10 +43,11 @@ export const api = {
     },
 
     // CDR Report endpoints
-    getCdrSummary: async (start?: string, end?: string) => {
+    getCdrSummary: async (start?: string, end?: string, queue?: string) => {
         const params: any = {};
         if (start) params.start = start;
         if (end) params.end = end;
+        if (queue) params.queue = queue;
         const { data } = await client.get('/api/cdr/summary', { params });
         return data;
     },
@@ -57,12 +58,23 @@ export const api = {
         const { data } = await client.get(`/api/cdr/agent/${agentId}`, { params });
         return data;
     },
-    getCdrTimeRange: async (start: string, end: string) => {
-        const { data } = await client.get('/api/cdr/time_range', { params: { start, end } });
+    getCdrTimeRange: async (start: string, end: string, queue?: string) => {
+        const params: any = { start, end };
+        if (queue) params.queue = queue;
+        const { data } = await client.get('/api/cdr/time_range', { params });
         return data;
     },
     refreshCdr: async () => {
         const { data } = await client.post('/api/cdr/refresh', {});
         return data;
+    },
+
+    // Recording endpoints
+    getRecordings: async (limit = 50) => {
+        const { data } = await client.get<any[]>('/api/recordings/list', { params: { limit } });
+        return data;
+    },
+    getRecordingUrl: (filename: string) => {
+        return `${API_URL}/api/recordings/stream/${encodeURIComponent(filename)}`;
     },
 };

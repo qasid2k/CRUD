@@ -15,6 +15,7 @@ AsterFlow is a high-performance, full-stack management suite for Asterisk PBX sy
 *   **Live Monitoring**: Instant visualization of queue member status (Online, Busy, Paused, Offline) via Asterisk AMI.
 *   **Bridge Detection**: See who your agents are currently talking to with live caller-ID and extension correlation.
 *   **Supervisor Tools**: Direct integration for **Spy**, **Whisper**, and **Barge** actions to monitor active calls.
+*   **Call Recording & Playback**: Automatic fetching of queue recordings from Asterisk with a side-panel browser player.
 
 ### 🛠️ Universal Table Browser
 *   **Dynamic CRUD Engine**: Automatically generates management interfaces for any Asterisk database table based on backend models.
