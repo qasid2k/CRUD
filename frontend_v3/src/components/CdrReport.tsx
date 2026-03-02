@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { RefreshCw, Calendar, User, Clock, Phone, PhoneOff, PhoneMissed, BarChart3, Filter, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { RefreshCw, Calendar, User, Clock, Phone, PhoneOff, PhoneMissed, BarChart3, Filter, ChevronLeft, ChevronRight, Layers, Play } from 'lucide-react';
 import { api } from '../api/client';
 import ThemeToggle from './ThemeToggle';
 
@@ -85,9 +85,11 @@ const CdrReport: React.FC = () => {
     const [selectedQueue, setSelectedQueue] = useState<string>('all');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
-    const [activeTab, setActiveTab] = useState<'heatmap' | 'summary' | 'hourly'>('heatmap');
+    const [activeTab, setActiveTab] = useState<'heatmap' | 'summary' | 'hourly' | 'logs'>('heatmap');
     const [availableAgents, setAvailableAgents] = useState<string[]>([]);
     const [availableQueues, setAvailableQueues] = useState<string[]>([]);
+    const [callLogs, setCallLogs] = useState<any[]>([]);
+    const [logsLoading, setLogsLoading] = useState(false);
 
     /* ---------- fetch data ---------- */
     const fetchData = useCallback(async () => {
@@ -105,23 +107,12 @@ const CdrReport: React.FC = () => {
 
             setData(result);
 
-            // Persist the queue list
+            // Persist lists... (keeping existing logic)
             if (result.queues.length > 0) {
-                setAvailableQueues(prev => {
-                    const merged = Array.from(new Set([...prev, ...result.queues]));
-                    return merged.sort();
-                });
+                setAvailableQueues(prev => Array.from(new Set([...prev, ...result.queues])).sort());
             }
-
-            // Persist the agent list when we have all agents or if we don't have a list yet
-            if (result.agents.length > 0) {
-                if (selectedAgent === 'all' || availableAgents.length === 0) {
-                    setAvailableAgents(prev => {
-                        // Merge and sort to ensure we have a unique, complete list
-                        const merged = Array.from(new Set([...prev, ...result.agents]));
-                        return merged.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-                    });
-                }
+            if (result.agents.length > 0 && (selectedAgent === 'all' || availableAgents.length === 0)) {
+                setAvailableAgents(prev => Array.from(new Set([...prev, ...result.agents])).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
             }
         } catch (e: any) {
             setError(e?.message || 'Failed to load CDR data');
@@ -130,13 +121,25 @@ const CdrReport: React.FC = () => {
         }
     }, [selectedAgent, selectedQueue, startDate, endDate, availableAgents.length]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    const fetchLogs = useCallback(async () => {
+        setLogsLoading(true);
+        try {
+            // Fetch raw CDR records from the generic table endpoint
+            const logs = await api.getTableData('cdr', 0, 50);
+            setCallLogs(logs);
+        } catch (err) {
+            console.error('Failed to fetch call logs', err);
+        } finally {
+            setLogsLoading(false);
+        }
+    }, []);
 
-    /* Auto-refresh every hour */
     useEffect(() => {
-        const interval = setInterval(fetchData, 3600_000);
-        return () => clearInterval(interval);
-    }, [fetchData]);
+        fetchData();
+        if (activeTab === 'logs') fetchLogs();
+    }, [fetchData, fetchLogs, activeTab]);
+
+    /* ---------- (rest of hooks remains same) ---------- */
 
     /* ---------- derived data ---------- */
     const heatmapByAgent = useMemo(() => {
@@ -168,7 +171,7 @@ const CdrReport: React.FC = () => {
         };
 
         const year = new Date(start + 'T00:00:00').getFullYear();
-        return `${formatDateShort(start)} - ${formatDateShort(end)}, ${year}`;
+        return `${formatDateShort(start)} - ${formatDateShort(end)}, ${year} `;
     }, [data, loading]);
 
     const hours = Array.from({ length: 24 }, (_, i) => i);
@@ -321,6 +324,12 @@ const CdrReport: React.FC = () => {
                     onClick={() => setActiveTab('hourly')}
                 >
                     <BarChart3 size={16} /> Hourly Volume
+                </button>
+                <button
+                    className={`cdr-tab ${activeTab === 'logs' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('logs')}
+                >
+                    <Clock size={16} /> Call Logs
                 </button>
             </div>
 
@@ -491,9 +500,9 @@ const CdrReport: React.FC = () => {
                                     <div
                                         className="cdr-bar"
                                         style={{
-                                            height: `${heightPct}%`,
+                                            height: `${heightPct}% `,
                                             backgroundColor: item.calls > 0
-                                                ? `hsl(${140 - (heightPct * 1.2)}, 75%, 50%)`
+                                                ? `hsl(${140 - (heightPct * 1.2)}, 75 %, 50 %)`
                                                 : 'var(--border)',
                                             minHeight: item.calls > 0 ? '4px' : '2px',
                                         }}
@@ -503,6 +512,66 @@ const CdrReport: React.FC = () => {
                                 </div>
                             );
                         })}
+                    </div>
+                </div>
+            )}
+
+            {/* ================================================================ */}
+            {/* CALL LOGS TAB                                                    */}
+            {/* ================================================================ */}
+            {activeTab === 'logs' && (
+                <div className="cdr-logs-section">
+                    <h2 className="cdr-section-title">Individual Call Records</h2>
+                    <div className="table-container">
+                        <div className="table-scroll">
+                            <table className="cdr-heatmap-table" style={{ width: '100%' }}>
+                                <thead>
+                                    <tr>
+                                        <th>Date/Time</th>
+                                        <th>Source</th>
+                                        <th>Destination</th>
+                                        <th>Duration</th>
+                                        <th>Status</th>
+                                        <th style={{ textAlign: 'center' }}>Play</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {logsLoading ? (
+                                        <tr><td colSpan={6} style={{ textAlign: 'center', padding: '40px' }}>Loading records...</td></tr>
+                                    ) : callLogs.length === 0 ? (
+                                        <tr><td colSpan={6} style={{ textAlign: 'center', padding: '40px' }}>No records found.</td></tr>
+                                    ) : (
+                                        callLogs.map((log, idx) => (
+                                            <tr key={idx}>
+                                                <td>{new Date(log.calldate).toLocaleString()}</td>
+                                                <td>{log.src}</td>
+                                                <td>{log.dst}</td>
+                                                <td>{log.duration}s</td>
+                                                <td>
+                                                    <span className={`status-pill ${log.disposition?.toLowerCase()}`}>
+                                                        {log.disposition}
+                                                    </span>
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    {log.has_recording && (
+                                                        <button
+                                                            className="rec-btn play"
+                                                            style={{ margin: '0 auto' }}
+                                                            onClick={() => {
+                                                                const filename = log.userfield || `${log.uniqueid}.wav`;
+                                                                window.open(api.getRecordingUrl(filename), '_blank');
+                                                            }}
+                                                        >
+                                                            <Play size={16} fill="#10b981" />
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             )}

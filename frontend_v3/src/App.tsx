@@ -9,12 +9,11 @@ import RecordingPanel from './components/RecordingPanel';
 import { api } from './api/client';
 import './index.css';
 
-export type Page = 'dashboard' | 'browser' | 'cdr' | 'softphone';
+export type Page = 'dashboard' | 'browser' | 'cdr' | 'softphone' | 'recordings';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isRecordingPanelOpen, setIsRecordingPanelOpen] = useState(false);
   const [tables, setTables] = useState<string[]>([]);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -45,7 +44,6 @@ const App: React.FC = () => {
         }}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
-        onOpenRecordings={() => setIsRecordingPanelOpen(true)}
       />
 
       <button
@@ -63,6 +61,8 @@ const App: React.FC = () => {
           <CdrReport />
         ) : currentPage === 'softphone' ? (
           <Softphone />
+        ) : currentPage === 'recordings' ? (
+          <RecordingPanel />
         ) : (
           <TableBrowser
             tables={tables}
@@ -70,11 +70,6 @@ const App: React.FC = () => {
           />
         )}
       </main>
-
-      <RecordingPanel
-        isOpen={isRecordingPanelOpen}
-        onClose={() => setIsRecordingPanelOpen(false)}
-      />
 
       {toast && (
         <Toast

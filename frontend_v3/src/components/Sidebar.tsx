@@ -7,10 +7,9 @@ interface SidebarProps {
     setCurrentPage: (page: Page) => void;
     isOpen: boolean;
     onToggle: () => void;
-    onOpenRecordings: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentPage, setCurrentPage, isOpen, onToggle, onOpenRecordings }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentPage, setCurrentPage, isOpen, onToggle }) => {
     return (
         <>
             <div
@@ -47,19 +46,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, setCurrentPage, isOpen, 
                         <span>Table Browser</span>
                     </div>
                     <div
+                        className={`nav-item ${currentPage === 'recordings' ? 'active' : ''}`}
+                        onClick={() => setCurrentPage('recordings')}
+                    >
+                        <Phone size={18} style={{ color: '#10b981' }} />
+                        <span>Call Recordings</span>
+                    </div>
+                    <div
                         className={`nav-item ${currentPage === 'softphone' ? 'active' : ''}`}
                         onClick={() => setCurrentPage('softphone')}
                     >
                         <Phone size={18} />
                         <span>Softphone</span>
-                    </div>
-                </div>
-
-                <div className="nav-label">Utilities</div>
-                <div className="nav-list">
-                    <div className="nav-item" onClick={onOpenRecordings}>
-                        <Phone size={18} style={{ color: '#10b981' }} />
-                        <span>Call Recordings</span>
                     </div>
                 </div>
             </aside>
