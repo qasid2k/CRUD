@@ -40,6 +40,17 @@ def get_recent_recordings(limit: int = 50) -> List[Dict[str, Any]]:
     recordings.sort(key=lambda x: x["created_at"], reverse=True)
     return recordings[:limit]
 
+def get_recordings_uniqueids() -> set[str]:
+    """
+    Returns a set of uniqueids (filenames without extensions) that exist in the recordings directory.
+    """
+    if not os.path.exists(RECORDINGS_DIR):
+        return set()
+    
+    files = glob.glob(os.path.join(RECORDINGS_DIR, "*.[wm][ap][v3]"))
+    # Extract filename without extension
+    return {os.path.splitext(os.path.basename(f))[0] for f in files}
+
 def stream_recording(filename: str):
     """
     Returns a FileResponse for streaming a recording.

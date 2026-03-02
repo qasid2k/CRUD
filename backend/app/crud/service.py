@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, SQLModel
 
 from . import repository
+from . import recordings_service
 
 
 def get_available_tables() -> List[str]:
@@ -26,7 +27,31 @@ def get_schema(table_name: str) -> Dict[str, Any]:
 
 def list_items(table_name: str, skip: int, limit: int, session: Session):
     model = get_model_or_404(table_name)
-    return repository.list_items(session, model, skip=skip, limit=limit)
+    items = repository.list_items(session, model, skip=skip, limit=limit)
+    
+    # If it's a call record table, augment with recording presence info
+    if table_name.lower() in ["cdr", "queue_log"]:
+        # Get a set of uniqueids that have recordings
+        # We do this once per batch of items for efficiency
+        recording_ids = recordings_service.get_recordings_uniqueids()
+        
+        # Convert to list of dicts to add the new field
+        augmented_items = []
+        for item in items:
+            # SQLModel to dict
+            item_dict = item.model_dump() if hasattr(item, "model_dump") else item.dict()
+            
+            # Match the uniqueid with a file (either direct match or from userfield)
+            uid = item_dict.get("uniqueid")
+            userfield = item_dict.get("userfield", "").split(".")[0] if item_dict.get("userfield") else None
+            
+            # Check if recording exists for this call
+            item_dict["has_recording"] = (uid in recording_ids) or (userfield in recording_ids)
+            augmented_items.append(item_dict)
+            
+        return augmented_items
+        
+    return items
 
 
 def create_item(table_name: str, data: Dict[str, Any], session: Session):

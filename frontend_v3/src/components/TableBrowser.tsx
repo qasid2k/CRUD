@@ -214,18 +214,20 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
                                                     {f === 'uniqueid' && ['cdr', 'queue_log'].includes(currentTable.toLowerCase()) ? (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                             <span>{String(row[f])}</span>
-                                                            <button
-                                                                className="btn-icon"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    const filename = row.userfield || `${row.uniqueid}.wav`;
-                                                                    window.open(api.getRecordingUrl(filename), '_blank');
-                                                                }}
-                                                                title="Play Recording"
-                                                                style={{ color: '#10b981', padding: '2px' }}
-                                                            >
-                                                                <Play size={14} fill="#10b981" />
-                                                            </button>
+                                                            {row.has_recording && (
+                                                                <button
+                                                                    className="btn-icon"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const filename = row.userfield || `${row.uniqueid}.wav`;
+                                                                        window.open(api.getRecordingUrl(filename), '_blank');
+                                                                    }}
+                                                                    title="Play Recording"
+                                                                    style={{ color: '#10b981', padding: '2px' }}
+                                                                >
+                                                                    <Play size={14} fill="#10b981" />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     ) : String(row[f])}
                                                 </td>
