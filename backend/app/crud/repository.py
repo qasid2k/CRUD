@@ -1,110 +1,187 @@
+"""
+Dynamic Database Repository
+----------------------------
+Uses SQLAlchemy reflection to auto-discover ALL tables in the connected
+database.  No hardcoded models needed – works with any Asterisk DB.
+"""
+
 from __future__ import annotations
 
-from typing import Any, Dict, List, Type
-import inspect
+from typing import Any, Dict, List, Optional
 
-from sqlmodel import SQLModel, Session, select
+from sqlalchemy import MetaData, Table, inspect as sa_inspect
+from sqlalchemy import select, insert, update, delete, and_
+from sqlmodel import Session
 
-from .. import models
-
-
-_model_cache: Dict[str, Type[SQLModel]] | None = None
+from ..database import engine
 
 
-def _build_model_cache() -> Dict[str, Type[SQLModel]]:
-    cache: Dict[str, Type[SQLModel]] = {}
-    for _name, obj in inspect.getmembers(models):
-        if (
-            inspect.isclass(obj)
-            and issubclass(obj, SQLModel)
-            and obj is not SQLModel
-            and hasattr(obj, "__tablename__")
-        ):
-            table_name = getattr(obj, "__tablename__").lower()
-            cache[table_name] = obj
-    return cache
+# ---------------------------------------------------------------------------
+# Reflected metadata cache
+# ---------------------------------------------------------------------------
+_metadata: Optional[MetaData] = None
 
 
-def get_model(table_name: str) -> Type[SQLModel] | None:
-    """Return SQLModel class for a given table name (case‑insensitive)."""
-    global _model_cache
-    if _model_cache is None:
-        _model_cache = _build_model_cache()
-    return _model_cache.get(table_name.lower())
+def _get_metadata() -> MetaData:
+    """Reflect all tables from the database (cached after first call)."""
+    global _metadata
+    if _metadata is None:
+        _metadata = MetaData()
+        _metadata.reflect(bind=engine)
+    return _metadata
 
 
+def invalidate_cache():
+    """Force re-reflection on next request (e.g. after schema changes)."""
+    global _metadata
+    _metadata = None
+
+
+# ---------------------------------------------------------------------------
+# Table discovery
+# ---------------------------------------------------------------------------
 def list_tables() -> List[str]:
-    """Return list of known table names."""
-    global _model_cache
-    if _model_cache is None:
-        _model_cache = _build_model_cache()
-    return sorted(_model_cache.keys())
+    """Return sorted list of all table names in the database."""
+    return sorted(_get_metadata().tables.keys())
 
 
-def get_table_schema(model: Type[SQLModel]) -> Dict[str, Any]:
-    """Return list of field names and primary keys for the given model."""
-    if hasattr(model, "model_fields"):
-        fields = list(model.model_fields.keys())
-    else:
-        fields = list(model.__fields__.keys())
-    
-    # Get primary key column names
-    pk_names = [c.name for c in model.__table__.primary_key.columns]
-    
+def get_table(table_name: str) -> Optional[Table]:
+    """Return the SQLAlchemy Table object for a given name (case-insensitive)."""
+    return _get_metadata().tables.get(table_name.lower())
+
+
+# ---------------------------------------------------------------------------
+# Schema introspection
+# ---------------------------------------------------------------------------
+def get_table_schema(table_name: str) -> Optional[Dict[str, Any]]:
+    """Return field names and primary keys for a table."""
+    table = get_table(table_name)
+    if table is None:
+        return None
+
+    fields = [c.name for c in table.columns]
+    pk_names = [c.name for c in table.primary_key.columns]
+
     return {
         "fields": fields,
-        "primary_keys": pk_names
+        "primary_keys": pk_names,
     }
 
 
-def list_items(session: Session, model: Type[SQLModel], skip: int = 0, limit: int = 100):
-    statement = select(model).offset(skip).limit(limit)
-    return session.exec(statement).all()
+# ---------------------------------------------------------------------------
+# CRUD operations
+# ---------------------------------------------------------------------------
+def list_items(
+    session: Session,
+    table_name: str,
+    skip: int = 0,
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    """Return a paginated list of rows as dicts."""
+    table = get_table(table_name)
+    if table is None:
+        return []
+
+    stmt = select(table).offset(skip).limit(limit)
+    result = session.execute(stmt)
+    return [dict(row._mapping) for row in result]
 
 
-def create_item(session: Session, model: Type[SQLModel], data: Dict[str, Any]):
-    db_item = model.model_validate(data)
-    session.add(db_item)
+def create_item(
+    session: Session,
+    table_name: str,
+    data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Insert a new row and return the data dict."""
+    table = get_table(table_name)
+    if table is None:
+        raise ValueError(f"Table '{table_name}' not found")
+
+    session.execute(insert(table).values(**data))
     session.commit()
-    session.refresh(db_item)
-    return db_item
+    return data
 
 
-def get_item_by_id(session: Session, model: Type[SQLModel], item_id: str):
-    """Fetch a single item by primary key, supporting composite keys with ::: separator."""
-    pk_columns = model.__table__.primary_key.columns
-    
-    if len(pk_columns) > 1 and ":::" in item_id:
-        # Handle composite primary keys
+def _build_pk_conditions(table: Table, item_id: str):
+    """Build WHERE conditions for a primary key lookup, supporting composites."""
+    pk_columns = list(table.primary_key.columns)
+
+    if len(pk_columns) > 1 and ":::" in str(item_id):
         parts = item_id.split(":::")
-        if len(parts) == len(pk_columns):
-            pk_values = []
-            for part in parts:
-                try:
-                    pk_values.append(int(part))
-                except (ValueError, TypeError):
-                    pk_values.append(part)
-            return session.get(model, tuple(pk_values))
+        if len(parts) != len(pk_columns):
+            return None
+        conditions = []
+        for col, val in zip(pk_columns, parts):
+            conditions.append(col == _try_int(val))
+        return and_(*conditions)
 
-    # Single primary key logic
-    obj = session.get(model, item_id)
-    if obj is not None:
-        return obj
+    # Single primary key – try both string and int
+    pk_col = pk_columns[0]
+    return pk_col == _try_int(item_id)
+
+
+def _try_int(value: str):
+    """Try to convert a string to int; return original if it fails."""
     try:
-        int_id = int(item_id)
-    except (TypeError, ValueError):
+        return int(value)
+    except (ValueError, TypeError):
+        return value
+
+
+def get_item_by_id(
+    session: Session,
+    table_name: str,
+    item_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Fetch a single row by primary key."""
+    table = get_table(table_name)
+    if table is None:
         return None
-    return session.get(model, int_id)
+
+    condition = _build_pk_conditions(table, item_id)
+    if condition is None:
+        return None
+
+    result = session.execute(select(table).where(condition)).first()
+    return dict(result._mapping) if result else None
 
 
-def save_item(session: Session, obj: SQLModel):
-    session.add(obj)
+def update_item(
+    session: Session,
+    table_name: str,
+    item_id: str,
+    data: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Update a row by primary key and return the updated data."""
+    table = get_table(table_name)
+    if table is None:
+        return None
+
+    condition = _build_pk_conditions(table, item_id)
+    if condition is None:
+        return None
+
+    session.execute(update(table).where(condition).values(**data))
     session.commit()
-    session.refresh(obj)
-    return obj
+
+    # Return the updated row
+    return get_item_by_id(session, table_name, item_id)
 
 
-def delete_item(session: Session, obj: SQLModel):
-    session.delete(obj)
+def delete_item(
+    session: Session,
+    table_name: str,
+    item_id: str,
+) -> bool:
+    """Delete a row by primary key. Returns True if successful."""
+    table = get_table(table_name)
+    if table is None:
+        return False
+
+    condition = _build_pk_conditions(table, item_id)
+    if condition is None:
+        return False
+
+    session.execute(delete(table).where(condition))
     session.commit()
-
+    return True

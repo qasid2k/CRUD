@@ -17,9 +17,8 @@ from collections import defaultdict
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
-from sqlmodel import Session, text, select
+from sqlmodel import Session, text
 from ..database import engine
-from ..models import PsEndpoints
 
 
 # ---------------------------------------------------------------------------
@@ -133,9 +132,9 @@ def _aggregate(
     
     try:
         with Session(engine) as session:
-            endpoints = session.exec(select(PsEndpoints.id)).all()
-            for eid in endpoints:
-                ext = str(eid)
+            result = session.execute(text("SELECT id FROM ps_endpoints"))
+            for row in result:
+                ext = str(row[0])
                 all_agents.add(ext)
                 # This touch ensures they exist in agent_stats with default values
                 _ = agent_stats[ext]
