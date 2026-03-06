@@ -173,9 +173,10 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
                         onChange={(e) => loadTableData(e.target.value)}
                     >
                         <option value="">Select a table to open...</option>
-                        {tables.map(t => (
+                        {(tables || []).map(t => (
                             <option key={t} value={t}>{t.toUpperCase()}</option>
                         ))}
+
                     </select>
                 </div>
             </div>

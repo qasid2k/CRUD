@@ -2,11 +2,12 @@
 Dynamic Database Repository
 ----------------------------
 Uses SQLAlchemy reflection to auto-discover ALL tables in the connected
-database.  No hardcoded models needed – works with any Asterisk DB.
+database. No hardcoded models needed – works with any Asterisk DB.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import MetaData, Table, inspect as sa_inspect
@@ -19,35 +20,75 @@ from ..database import engine
 # ---------------------------------------------------------------------------
 # Reflected metadata cache
 # ---------------------------------------------------------------------------
-_metadata: Optional[MetaData] = None
+_metadata: MetaData = MetaData()
 
 
 def _get_metadata() -> MetaData:
-    """Reflect all tables from the database (cached after first call)."""
-    global _metadata
-    if _metadata is None:
-        _metadata = MetaData()
-        _metadata.reflect(bind=engine)
+    """Return the global metadata object."""
     return _metadata
 
 
 def invalidate_cache():
-    """Force re-reflection on next request (e.g. after schema changes)."""
+    """Clear the reflected metadata cache."""
     global _metadata
-    _metadata = None
+    _metadata = MetaData()
 
 
 # ---------------------------------------------------------------------------
 # Table discovery
 # ---------------------------------------------------------------------------
 def list_tables() -> List[str]:
-    """Return sorted list of all table names in the database."""
-    return sorted(_get_metadata().tables.keys())
+    """
+    Return sorted list of all table names in the database.
+    If TABLE_NAMES is defined in .env, it acts as a filter/whitelist.
+    """
+    # 1. Check if a whitelist is explicitly provided in the environment
+    whitelist_raw = os.getenv("TABLE_NAMES")
+    if whitelist_raw:
+        return [t.strip() for t in whitelist_raw.split(",") if t.strip()]
+
+    # 2. Otherwise, dynamically discover all tables in the current schema
+    inspector = sa_inspect(engine)
+    return sorted(inspector.get_table_names())
 
 
 def get_table(table_name: str) -> Optional[Table]:
-    """Return the SQLAlchemy Table object for a given name (case-insensitive)."""
-    return _get_metadata().tables.get(table_name.lower())
+    """
+    Return the SQLAlchemy Table object for a given name.
+    Performs case-insensitive lookup and dynamic reflection if needed.
+    """
+    # 1. Direct hit in cache
+    if table_name in _metadata.tables:
+        return _metadata.tables[table_name]
+
+    # 2. Case-insensitive search in existing metadata
+    for t_name in _metadata.tables:
+        if t_name.lower() == table_name.lower():
+            return _metadata.tables[t_name]
+
+    # 3. Try to reflect it from the database on-demand
+    try:
+        # Check if it actually exists in the DB first (handling casing)
+        inspector = sa_inspect(engine)
+        db_tables = inspector.get_table_names()
+        
+        actual_name = None
+        if table_name in db_tables:
+            actual_name = table_name
+        else:
+            # Case-insensitive search in DB
+            for t in db_tables:
+                if t.lower() == table_name.lower():
+                    actual_name = t
+                    break
+        
+        if actual_name:
+            return Table(actual_name, _metadata, autoload_with=engine)
+            
+    except Exception as e:
+        print(f"Error reflecting table {table_name}: {e}")
+    
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +100,7 @@ def get_table_schema(table_name: str) -> Optional[Dict[str, Any]]:
     if table is None:
         return None
 
+    # We use table.columns to get ALL fields defined in the DB
     fields = [c.name for c in table.columns]
     pk_names = [c.name for c in table.primary_key.columns]
 
@@ -105,6 +147,9 @@ def create_item(
 def _build_pk_conditions(table: Table, item_id: str):
     """Build WHERE conditions for a primary key lookup, supporting composites."""
     pk_columns = list(table.primary_key.columns)
+
+    if not pk_columns:
+        return None
 
     if len(pk_columns) > 1 and ":::" in str(item_id):
         parts = item_id.split(":::")
@@ -185,3 +230,4 @@ def delete_item(
     session.execute(delete(table).where(condition))
     session.commit()
     return True
+
