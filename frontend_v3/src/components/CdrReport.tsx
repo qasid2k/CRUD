@@ -32,6 +32,7 @@ interface HourlyVolume {
 
 interface CdrData {
     agents: string[];
+    agent_names?: Record<string, string>;
     queues: string[];
     dates: string[];
     heatmap: HeatmapRow[];
@@ -90,6 +91,7 @@ const CdrReport: React.FC = () => {
     const [availableQueues, setAvailableQueues] = useState<string[]>([]);
     const [callLogs, setCallLogs] = useState<any[]>([]);
     const [logsLoading, setLogsLoading] = useState(false);
+    const [isAllTime, setIsAllTime] = useState(false);
 
     /* ---------- fetch data ---------- */
     const fetchData = useCallback(async () => {
@@ -98,28 +100,29 @@ const CdrReport: React.FC = () => {
         try {
             let result: CdrData;
             if (selectedAgent !== 'all') {
-                result = await api.getCdrAgent(selectedAgent, startDate || undefined, endDate || undefined);
+                result = await api.getCdrAgent(selectedAgent, startDate || undefined, endDate || undefined, selectedQueue !== 'all' ? selectedQueue : undefined, isAllTime);
             } else if (startDate && endDate) {
-                result = await api.getCdrTimeRange(startDate, endDate, selectedQueue !== 'all' ? selectedQueue : undefined);
+                result = await api.getCdrTimeRange(startDate, endDate, selectedQueue !== 'all' ? selectedQueue : undefined, isAllTime);
             } else {
-                result = await api.getCdrSummary(startDate || undefined, endDate || undefined, selectedQueue !== 'all' ? selectedQueue : undefined);
+                result = await api.getCdrSummary(startDate || undefined, endDate || undefined, selectedQueue !== 'all' ? selectedQueue : undefined, isAllTime);
             }
 
             setData(result);
 
-            // Persist lists... (keeping existing logic)
+            // Update lists
             if (result.queues.length > 0) {
                 setAvailableQueues(prev => Array.from(new Set([...prev, ...result.queues])).sort());
             }
-            if (result.agents.length > 0 && (selectedAgent === 'all' || availableAgents.length === 0)) {
-                setAvailableAgents(prev => Array.from(new Set([...prev, ...result.agents])).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
-            }
+            
+            // If we have a queue filter, we only show agents returned for that queue
+            // If no queue filter, we show all agents
+            setAvailableAgents(result.agents.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
         } catch (e: any) {
             setError(e?.message || 'Failed to load CDR data');
         } finally {
             setLoading(false);
         }
-    }, [selectedAgent, selectedQueue, startDate, endDate, availableAgents.length]);
+    }, [selectedAgent, selectedQueue, startDate, endDate, isAllTime]);
 
     const fetchLogs = useCallback(async () => {
         setLogsLoading(true);
@@ -158,12 +161,30 @@ const CdrReport: React.FC = () => {
         return data.agents;
     }, [data, selectedAgent]);
 
-    const rangeLabel = useMemo(() => {
-        if (loading) return 'Loading...';
-        if (!data || !data.dates || data.dates.length === 0) return 'No data';
+    const displayDates = useMemo(() => {
+        // If start date is provided, use it, otherwise use current week's Monday
+        const baseDate = startDate ? new Date(startDate + 'T00:00:00') : new Date();
+        const currentMonday = new Date(baseDate);
+        if (!startDate) {
+            const day = currentMonday.getDay();
+            const diff = day === 0 ? -6 : 1 - day;
+            currentMonday.setDate(currentMonday.getDate() + diff);
+        }
 
-        const start = data.dates[0];
-        const end = data.dates[data.dates.length - 1];
+        const dates = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(currentMonday);
+            d.setDate(d.getDate() + i);
+            dates.push(d.toISOString().split('T')[0]);
+        }
+        return dates;
+    }, [startDate]);
+
+    const rangeLabel = useMemo(() => {
+        if (loading && displayDates.length === 0) return 'Loading...';
+        
+        const start = displayDates[0];
+        const end = displayDates[displayDates.length - 1];
 
         const formatDateShort = (dStr: string) => {
             const d = new Date(dStr + 'T00:00:00');
@@ -171,8 +192,8 @@ const CdrReport: React.FC = () => {
         };
 
         const year = new Date(start + 'T00:00:00').getFullYear();
-        return `${formatDateShort(start)} - ${formatDateShort(end)}, ${year} `;
-    }, [data, loading]);
+        return `${formatDateShort(start)} - ${formatDateShort(end)}, ${year}`;
+    }, [displayDates, loading]);
 
     const hours = Array.from({ length: 24 }, (_, i) => i);
 
@@ -192,17 +213,14 @@ const CdrReport: React.FC = () => {
         newStart.setDate(newStart.getDate() + offset);
 
         const newEnd = new Date(newStart);
-        newEnd.setDate(newEnd.getDate() + 6);
+        newEnd.setDate(newEnd.getDate() + 6); // Monday to Sunday (7 days total)
 
         setStartDate(newStart.toISOString().split('T')[0]);
         setEndDate(newEnd.toISOString().split('T')[0]);
+        setIsAllTime(false);
     };
 
-    const resetToThisWeek = () => {
-        setStartDate('');
-        setEndDate('');
-        setSelectedQueue('all');
-    };
+
 
     /* ---------- manual refresh ---------- */
     const handleRefresh = async () => {
@@ -243,7 +261,9 @@ const CdrReport: React.FC = () => {
                     >
                         <option value="all">All Agents</option>
                         {availableAgents.map(a => (
-                            <option key={a} value={a}>Extension {a}</option>
+                            <option key={a} value={a}>
+                                {data?.agent_names?.[a] ? data.agent_names[a] : `Extension ${a}`}
+                            </option>
                         ))}
                     </select>
                 </div>
@@ -272,37 +292,25 @@ const CdrReport: React.FC = () => {
                     <input
                         type="date"
                         value={startDate}
-                        onChange={e => setStartDate(e.target.value)}
+                        onChange={e => {
+                            setStartDate(e.target.value);
+                            setIsAllTime(false);
+                        }}
                         className="cdr-input"
                     />
                     <label>To:</label>
                     <input
                         type="date"
                         value={endDate}
-                        onChange={e => setEndDate(e.target.value)}
+                        onChange={e => {
+                            setEndDate(e.target.value);
+                            setIsAllTime(false);
+                        }}
                         className="cdr-input"
                     />
                 </div>
 
-                <div className="cdr-filter-group" style={{ marginLeft: 'auto' }}>
-                    <div className="cdr-nav-container">
-                        <div className="cdr-nav-group">
-                            <button className="cdr-nav-btn" onClick={() => shiftWeek('prev')} title="Previous Week">
-                                <ChevronLeft size={18} />
-                            </button>
-                            <button className={`cdr-nav-btn today ${!startDate ? 'active' : ''}`} onClick={resetToThisWeek}>
-                                This Week
-                            </button>
-                            <button className="cdr-nav-btn" onClick={() => shiftWeek('next')} title="Next Week">
-                                <ChevronRight size={18} />
-                            </button>
-                        </div>
-                        <div className="cdr-nav-label">
-                            <Calendar size={14} />
-                            <span>{rangeLabel}</span>
-                        </div>
-                    </div>
-                </div>
+
             </div>
 
             {/* ---- Tabs ---- */}
@@ -349,6 +357,23 @@ const CdrReport: React.FC = () => {
             {/* ================================================================ */}
             {activeTab === 'heatmap' && data && (
                 <div className="cdr-heatmap-section">
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+                        <div className="cdr-nav-container" style={{ margin: 0 }}>
+                            <div className="cdr-nav-group">
+                                <button className="cdr-nav-btn" onClick={() => shiftWeek('prev')} title="Previous Week">
+                                    <ChevronLeft size={18} />
+                                </button>
+                                <button className="cdr-nav-btn" onClick={() => shiftWeek('next')} title="Next Week">
+                                    <ChevronRight size={18} />
+                                </button>
+                            </div>
+                            <div className="cdr-nav-label">
+                                <Calendar size={14} />
+                                <span>{rangeLabel}</span>
+                            </div>
+                        </div>
+                    </div>
+
                     {displayAgents.length === 0 && (
                         <div className="cdr-empty">No agent data found for the selected filters.</div>
                     )}
@@ -371,33 +396,36 @@ const CdrReport: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {(heatmapByAgent[agent] || []).map(row => (
-                                            <tr key={row.date}>
-                                                <td className="cdr-date-cell" title={formatDate(row.date)}>
-                                                    <span className="cdr-day-name">{getDayName(row.date)}</span>
-                                                    <span className="cdr-date-text">{row.date}</span>
-                                                </td>
-                                                {hours.map(h => {
-                                                    const val = row.hours[String(h)] || 0;
-                                                    return (
-                                                        <td
-                                                            key={h}
-                                                            className="cdr-heat-cell"
-                                                            style={{
-                                                                backgroundColor: getHeatColor(val),
-                                                                color: getHeatTextColor(val),
-                                                            }}
-                                                            title={`${formatDate(row.date)} ${h}:00 — ${val} min`}
-                                                        >
-                                                            {val > 0 ? Math.round(val) : ''}
-                                                        </td>
-                                                    );
-                                                })}
-                                                <td className="cdr-total-cell">
-                                                    {Math.round(row.total_minutes)} min
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {displayDates.map(date => {
+                                            const row = (heatmapByAgent[agent] || []).find(r => r.date === date);
+                                            return (
+                                                <tr key={date}>
+                                                    <td className="cdr-date-cell" title={formatDate(date)}>
+                                                        <span className="cdr-day-name">{getDayName(date)}</span>
+                                                        <span className="cdr-date-text">{date}</span>
+                                                    </td>
+                                                    {hours.map(h => {
+                                                        const val = row?.hours[String(h)] || 0;
+                                                        return (
+                                                            <td
+                                                                key={h}
+                                                                className="cdr-heat-cell"
+                                                                style={{
+                                                                    backgroundColor: getHeatColor(val),
+                                                                    color: getHeatTextColor(val),
+                                                                }}
+                                                                title={`${formatDate(date)} ${h}:00 — ${val} min`}
+                                                            >
+                                                                {val > 0 ? Math.round(val) : ''}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                    <td className="cdr-total-cell">
+                                                        {Math.round(row?.total_minutes || 0)} min
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                         {(!heatmapByAgent[agent] || heatmapByAgent[agent].length === 0) && (
                                             <tr>
                                                 <td colSpan={26} className="cdr-empty-row">

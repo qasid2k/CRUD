@@ -21,7 +21,7 @@ async def _hourly_cdr_refresh():
     while True:
         await asyncio.sleep(3600)  # 1 hour
         try:
-            cdr_service.refresh_aggregation()
+            await cdr_service.refresh_aggregation()
         except Exception as e:
             print(f"[CDR Scheduler] Error during refresh: {e}")
 

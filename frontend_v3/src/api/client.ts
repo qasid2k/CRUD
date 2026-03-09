@@ -43,24 +43,28 @@ export const api = {
     },
 
     // CDR Report endpoints
-    getCdrSummary: async (start?: string, end?: string, queue?: string) => {
+    getCdrSummary: async (start?: string, end?: string, queue?: string, allTime?: boolean) => {
         const params: any = {};
         if (start) params.start = start;
         if (end) params.end = end;
         if (queue) params.queue = queue;
+        if (allTime) params.all_time = true;
         const { data } = await client.get('/api/cdr/summary', { params });
         return data;
     },
-    getCdrAgent: async (agentId: string, start?: string, end?: string) => {
+    getCdrAgent: async (agentId: string, start?: string, end?: string, queue?: string, allTime?: boolean) => {
         const params: any = {};
         if (start) params.start = start;
         if (end) params.end = end;
+        if (queue) params.queue = queue;
+        if (allTime) params.all_time = true;
         const { data } = await client.get(`/api/cdr/agent/${agentId}`, { params });
         return data;
     },
-    getCdrTimeRange: async (start: string, end: string, queue?: string) => {
+    getCdrTimeRange: async (start: string, end: string, queue?: string, allTime?: boolean) => {
         const params: any = { start, end };
         if (queue) params.queue = queue;
+        if (allTime) params.all_time = true;
         const { data } = await client.get('/api/cdr/time_range', { params });
         return data;
     },

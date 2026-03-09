@@ -180,11 +180,16 @@ class QueueStatusManager:
                             interface = event.get("Interface") or event.get("Location") or ""
                             ami_name = event.get("Name") or event.get("MemberName") or ""
                             
+                            # Try to extract extension number or identifier
                             digits = re.findall(r'\d+', interface)
                             ext_num = digits[0] if digits else ""
                             if not ext_num:
                                 name_digits = re.findall(r'\d+', ami_name)
                                 if name_digits: ext_num = name_digits[0]
+                            
+                            # Fallback: part of interface or name
+                            if not ext_num:
+                                ext_num = interface.split('/')[-1].split('@')[0] or ami_name or "Unknown"
 
                             member_name = db_names.get(interface) or ext_names.get(ext_num) or ami_name or ext_num
 

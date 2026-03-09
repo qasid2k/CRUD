@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, text
 from ..database import engine
+from .queue_status import queue_manager
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ from ..database import engine
 # ---------------------------------------------------------------------------
 _cache: Dict[str, Any] = {}
 _cache_ts: float = 0.0
-CACHE_TTL_SECONDS = 300  # 5 minutes – keeps data fresh without hammering DB
+CACHE_TTL_SECONDS = 10  # Reduced for more responsive "dynamic" updates
 
 
 def _is_cache_valid() -> bool:
@@ -52,11 +53,12 @@ def _ext_from_agent(agent: str) -> str:
 # ---------------------------------------------------------------------------
 # Core aggregation – runs a single SQL query, processes in Python
 # ---------------------------------------------------------------------------
-def _aggregate(
+async def _aggregate(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     agent_filter: Optional[str] = None,
     queue_filter: Optional[str] = None,
+    all_time: bool = False,
 ) -> Dict[str, Any]:
     """
     Query queue_log and build aggregation structures.
@@ -74,13 +76,19 @@ def _aggregate(
     conditions = ["1=1"]
     params: Dict[str, Any] = {}
 
-    if start_date:
+    effective_start = start_date
+    effective_end = end_date
+
+    # No default "This Week" filter anymore, if not provided it fetches all time
+    # (Unbounded start/end)
+
+    if effective_start:
         conditions.append("time >= :start")
-        params["start"] = start_date
-    if end_date:
+        params["start"] = effective_start
+    if effective_end:
         # Include the full end day
         conditions.append("time < DATE_ADD(:end, INTERVAL 1 DAY)")
-        params["end"] = end_date
+        params["end"] = effective_end
     if agent_filter:
         conditions.append("(agent LIKE :agent_pattern)")
         params["agent_pattern"] = f"%{agent_filter}%"
@@ -116,7 +124,7 @@ def _aggregate(
         lambda: defaultdict(lambda: defaultdict(float))
     )
 
-    # Initialize with all configured agents to ensure they show up even with 0 calls
+    # Initialize with all configured agents or just queue members
     agent_stats: Dict[str, Dict[str, Any]] = defaultdict(
         lambda: {
             "total_calls": 0,
@@ -128,25 +136,94 @@ def _aggregate(
             "failed": 0,
         }
     )
+    # Sets to track discovered entities (Agents, Dates, Queues)
     all_agents: set = set()
+    all_dates: set = set()
+    all_queues: set = set()
     
+    # Map for agent ID -> Name from AMI
+    agent_names: Dict[str, str] = {}
+
+    # --- Get base list of agents and queues from AMI ---
+    # We do NOT filter this by agent_id, because we want the full list for dropdowns
+    try:
+        ami_queues = await queue_manager.get_queue_status()
+        for q in ami_queues:
+            all_queues.add(q["name"])
+            
+            # Filter agents based on the selected queue
+            if not queue_filter:
+                # If no queue filter, collect all agents from all queues
+                for member in q["members"]:
+                    ext = member["number"]
+                    if ext and ext not in ("Unknown", "???"):
+                        all_agents.add(ext)
+                        agent_names[ext] = member["name"]
+                        _ = agent_stats[ext]
+            elif q["name"] == queue_filter:
+                # If a specific queue is selected, ONLY collect agents from that queue
+                for member in q["members"]:
+                    ext = member["number"]
+                    if ext and ext not in ("Unknown", "???"):
+                        all_agents.add(ext)
+                        agent_names[ext] = member["name"]
+                        _ = agent_stats[ext]
+
+    except Exception as e:
+        print(f"Error fetching agents/queues from AMI: {e}")
+
+    # --- DISCOVER HISTORICAL/LOGGED OUT AGENTS FROM DB ---
+    # This ensures those who aren't in AMI still show in the list
     try:
         with Session(engine) as session:
-            result = session.execute(text("SELECT id FROM ps_endpoints"))
-            for row in result:
-                ext = str(row[0])
-                all_agents.add(ext)
-                # This touch ensures they exist in agent_stats with default values
-                _ = agent_stats[ext]
+            # 1. Get from queue_members table (static/dynamic logged in members)
+            mq = "SELECT interface, queue_name FROM queue_members"
+            mp = {}
+            if queue_filter:
+                mq += " WHERE queue_name = :q"
+                mp = {"q": queue_filter}
+            
+            res_m = session.execute(text(mq), mp)
+            for row in res_m:
+                ext = _ext_from_agent(str(row[0]))
+                if ext and ext not in ("Unknown", "???"):
+                    all_agents.add(ext)
+                    _ = agent_stats[ext]
+                    if row[1]: all_queues.add(str(row[1]))
+
+            # 2. Get from queue_log table (those who had activity but might be logged out/deleted)
+            lq = "SELECT DISTINCT agent, queuename FROM queue_log WHERE agent NOT IN ('NONE', '')"
+            lp = {}
+            if queue_filter:
+                lq += " AND queuename = :q"
+                lp = {"q": queue_filter}
+            
+            res_l = session.execute(text(lq), lp)
+            for row in res_l:
+                ext = _ext_from_agent(str(row[0]))
+                if ext and ext not in ("Unknown", "???"):
+                    all_agents.add(ext)
+                    _ = agent_stats[ext]
+                    if row[1]: all_queues.add(str(row[1]))
+
+            # 3. Pull names from ps_endpoints for all discovered agents without names
+            missing_names = [a for a in all_agents if a not in agent_names]
+            if missing_names:
+                res_n = session.execute(
+                    text("SELECT id, callerid FROM ps_endpoints WHERE id IN :ids"),
+                    {"ids": tuple(missing_names)}
+                )
+                for row in res_n:
+                    if row[1]: agent_names[row[0]] = str(row[1])
+
     except Exception as e:
-        print(f"Error fetching extensions: {e}")
+        print(f"Error discovering historical agents from DB: {e}")
 
     # hourly_volume[hour] = count of events (CONNECT / COMPLETEAGENT / COMPLETECALLER)
     hourly_volume: Dict[int, int] = defaultdict(int)
 
-    # all dates/agents/queues seen
-    all_dates: set = set()
-    all_queues: set = set()
+    # Note: all_dates and all_queues are initialized at the top 
+    # to preserve data from the discovery phase.
 
     for row in rows:
         ts_str = str(row[0])  # time
@@ -167,10 +244,7 @@ def _aggregate(
 
         # Parse timestamp
         try:
-            if "." in ts_str:
-                dt = datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
-            else:
-                dt = datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
+            dt = datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
         except (ValueError, IndexError):
             continue
 
@@ -182,6 +256,17 @@ def _aggregate(
 
         if ext and ext != "Unknown":
             all_agents.add(ext)
+            # Ensure stats entry exists
+            if ext not in agent_stats:
+                agent_stats[ext] = {
+                    "total_calls": 0,
+                    "total_duration_sec": 0,
+                    "answered": 0,
+                    "abandoned": 0,
+                    "no_answer": 0,
+                    "busy": 0,
+                    "failed": 0,
+                }
 
         # ---- Handle specific events ----
         if event in ("COMPLETEAGENT", "COMPLETECALLER"):
@@ -223,29 +308,25 @@ def _aggregate(
     # -----------------------------------------------------------------------
     # Build sorted output (Fill in missing dates to ensure a continuous timeline)
     # -----------------------------------------------------------------------
-    if not all_dates:
-        return _empty_result()
+    if not all_dates and not (start_date and end_date):
+        # Even if no data, we might want to return the shell for "This Week"
+        pass 
 
-    # Determine the 7-day window to display
-    if not start_date and not end_date:
-        # Default view: Current week (Monday to Sunday)
-        today = date.today()
-        start_dt = today - timedelta(days=today.weekday())  # Back to Monday
-        end_dt = start_dt + timedelta(days=6)               # Forward to Sunday
-        range_start = start_dt.isoformat()
-        range_end = end_dt.isoformat()
+    # Determine the date window to display
+    if all_time:
+        range_start = min(all_dates or [date.today().isoformat()])
+        range_end = max(all_dates or [date.today().isoformat()])
     else:
-        # If user explicitly filtered, use their range
-        range_start = start_date if start_date else min(all_dates)
-        range_end = end_date if end_date else max(all_dates)
+        # Use whatever was applied to the SQL query (defaults to This Week)
+        range_start = effective_start if effective_start else min(all_dates or [date.today().isoformat()])
+        range_end = effective_end if effective_end else max(all_dates or [date.today().isoformat()])
 
     try:
         start_dt = date.fromisoformat(range_start)
         end_dt = date.fromisoformat(range_end)
     except Exception:
-        # Fallback to DB bounds if parsing fails
-        start_dt = date.fromisoformat(min(all_dates))
-        end_dt = date.fromisoformat(max(all_dates))
+        start_dt = date.today()
+        end_dt = date.today()
 
     sorted_dates = []
     curr = start_dt
@@ -293,6 +374,7 @@ def _aggregate(
 
     return {
         "agents": sorted_agents,
+        "agent_names": agent_names,
         "queues": sorted(all_queues),
         "dates": sorted_dates,
         "heatmap": heatmap_data,
@@ -306,6 +388,7 @@ def _aggregate(
 def _empty_result() -> Dict[str, Any]:
     return {
         "agents": [],
+        "agent_names": {},
         "queues": [],
         "dates": [],
         "heatmap": [],
@@ -319,47 +402,52 @@ def _empty_result() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Public API (used by routes)
 # ---------------------------------------------------------------------------
-def get_cdr_summary(
+async def get_cdr_summary(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     queue: Optional[str] = None,
+    all_time: bool = False,
 ) -> Dict[str, Any]:
     """Return aggregated CDR data, using cache when available."""
-    cache_key = f"summary:{start_date}:{end_date}:{queue}"
+    cache_key = f"summary:{start_date}:{end_date}:{queue}:{all_time}"
 
     if _is_cache_valid() and cache_key in _cache:
         return _cache[cache_key]
 
     global _cache_ts
-    data = _aggregate(start_date=start_date, end_date=end_date, queue_filter=queue)
+    data = await _aggregate(start_date=start_date, end_date=end_date, queue_filter=queue, all_time=all_time)
     _cache[cache_key] = data
     _cache_ts = time.time()
     return data
 
 
-def get_agent_report(
+async def get_agent_report(
     agent_id: str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    queue: Optional[str] = None,
+    all_time: bool = False,
 ) -> Dict[str, Any]:
     """Return CDR data filtered for a specific agent."""
-    return _aggregate(
+    return await _aggregate(
         start_date=start_date,
         end_date=end_date,
         agent_filter=agent_id,
+        queue_filter=queue,
+        all_time=all_time,
     )
 
 
-def get_time_range_report(start_date: str, end_date: str, queue: Optional[str] = None) -> Dict[str, Any]:
+async def get_time_range_report(start_date: str, end_date: str, queue: Optional[str] = None, all_time: bool = False) -> Dict[str, Any]:
     """Return CDR data for a specific date range."""
-    return get_cdr_summary(start_date=start_date, end_date=end_date, queue=queue)
+    return await get_cdr_summary(start_date=start_date, end_date=end_date, queue=queue, all_time=all_time)
 
 
-def refresh_aggregation():
+async def refresh_aggregation():
     """Called by the scheduler to pre-warm the cache."""
     invalidate_cache()
     # Pre-warm with last 30 days
     end = date.today().isoformat()
     start = (date.today() - timedelta(days=30)).isoformat()
-    get_cdr_summary(start_date=start, end_date=end)
+    await get_cdr_summary(start_date=start, end_date=end)
     print(f"[CDR] Cache refreshed at {datetime.now().isoformat()}")

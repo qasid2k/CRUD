@@ -20,12 +20,13 @@ async def cdr_summary(
     start: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     queue: Optional[str] = Query(None, description="Queue name filter"),
+    all_time: bool = Query(False, description="Show entire summary (overrides weekly default)"),
 ):
     """
     Returns aggregated CDR data: heatmap, agent summaries, hourly volume.
     If no dates provided, returns all available data.
     """
-    return cdr_service.get_cdr_summary(start_date=start, end_date=end, queue=queue)
+    return await cdr_service.get_cdr_summary(start_date=start, end_date=end, queue=queue, all_time=all_time)
 
 
 @router.get("/agent/{agent_id}")
@@ -33,9 +34,11 @@ async def cdr_agent(
     agent_id: str,
     start: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    queue: Optional[str] = Query(None, description="Queue name filter"),
+    all_time: bool = Query(False),
 ):
     """Returns CDR data filtered for a specific agent (extension number)."""
-    return cdr_service.get_agent_report(agent_id, start_date=start, end_date=end)
+    return await cdr_service.get_agent_report(agent_id, start_date=start, end_date=end, queue=queue, all_time=all_time)
 
 
 @router.get("/time_range")
@@ -43,13 +46,14 @@ async def cdr_time_range(
     start: str = Query(..., description="Start date (YYYY-MM-DD)"),
     end: str = Query(..., description="End date (YYYY-MM-DD)"),
     queue: Optional[str] = Query(None, description="Queue name filter"),
+    all_time: bool = Query(False),
 ):
     """Returns CDR data for a specific date range."""
-    return cdr_service.get_time_range_report(start_date=start, end_date=end, queue=queue)
+    return await cdr_service.get_time_range_report(start_date=start, end_date=end, queue=queue, all_time=all_time)
 
 
 @router.post("/refresh")
 async def cdr_refresh():
     """Manually refresh the CDR aggregation cache."""
-    cdr_service.refresh_aggregation()
+    await cdr_service.refresh_aggregation()
     return {"status": "ok", "message": "CDR cache refreshed"}
