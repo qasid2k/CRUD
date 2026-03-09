@@ -518,29 +518,33 @@ const CdrReport: React.FC = () => {
             {activeTab === 'hourly' && data && (
                 <div className="cdr-hourly-section">
                     <h2 className="cdr-section-title">Call Volume by Hour of Day</h2>
-                    <div className="cdr-bar-chart">
-                        {data.hourly_volume.map(item => {
-                            const maxCalls = Math.max(...data.hourly_volume.map(v => v.calls), 1);
-                            const heightPct = (item.calls / maxCalls) * 100;
-                            return (
-                                <div key={item.hour} className="cdr-bar-wrapper">
-                                    <span className="cdr-bar-value">{item.calls || ''}</span>
-                                    <div
-                                        className="cdr-bar"
-                                        style={{
-                                            height: `${heightPct}% `,
-                                            backgroundColor: item.calls > 0
-                                                ? `hsl(${140 - (heightPct * 1.2)}, 75 %, 50 %)`
-                                                : 'var(--border)',
-                                            minHeight: item.calls > 0 ? '4px' : '2px',
-                                        }}
-                                        title={`${item.hour}:00 — ${item.calls} calls`}
-                                    />
-                                    <span className="cdr-bar-label">{item.hour}</span>
-                                </div>
-                            );
-                        })}
+                    <div className="cdr-chart-container">
+                        <div className="cdr-y-axis-label">Total Calls</div>
+                        <div className="cdr-bar-chart">
+                            {data.hourly_volume.map(item => {
+                                const maxCalls = Math.max(...data.hourly_volume.map(v => v.calls), 1);
+                                const heightPct = (item.calls / maxCalls) * 100;
+                                return (
+                                    <div key={item.hour} className="cdr-bar-wrapper">
+                                        <span className="cdr-bar-value">{item.calls || ''}</span>
+                                        <div
+                                            className="cdr-bar"
+                                            style={{
+                                                height: `${heightPct}%`,
+                                                backgroundColor: item.calls > 0
+                                                    ? `hsl(${140 - (heightPct * 1.2)}, 75%, 50%)`
+                                                    : 'var(--border)',
+                                                minHeight: item.calls > 0 ? '4px' : '2px',
+                                            }}
+                                            title={`${item.hour}:00 — ${item.calls} calls`}
+                                        />
+                                        <span className="cdr-bar-label">{item.hour}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
+                    <div className="cdr-x-axis-label">Hour of Day (24h)</div>
                 </div>
             )}
 

@@ -1277,7 +1277,36 @@ tr:hover td {
   font-family: 'Space Grotesk', sans-serif;
 }
 
+.cdr-chart-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.cdr-y-axis-label {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.cdr-x-axis-label {
+  text-align: center;
+  width: 100%;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  padding-left: 40px; /* offset for Y axis label */
+}
+
 .cdr-bar-chart {
+  flex: 1;
   display: flex;
   align-items: flex-end;
   gap: 4px;
