@@ -19,6 +19,16 @@ build/
 # Docker
 .docker_temp/
 
+# SSL Certificates (CRITICAL)
+nginx/certs/
+*.crt
+*.key
+*.pem
+
+# Log Files
+*.log
+log/
+
 # OS Specific
 .DS_Store
 Thumbs.db

@@ -9,6 +9,11 @@ RUN npm install
 
 # Copy the rest of the application code and build
 COPY . .
+
+# Capture build arguments for production
+ARG VITE_ASTERISK_IP
+ENV VITE_ASTERISK_IP=$VITE_ASTERISK_IP
+
 RUN npm run build
 
 # Stage 2: Serve the application using Nginx

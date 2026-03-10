@@ -1,29 +1,37 @@
 services:
+  nginx:
+    image: nginx:latest
+    container_name: asterflow-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/certs:/etc/nginx/certs
+    depends_on:
+      - backend
+      - frontend
+
   backend:
     build: ./backend
     container_name: asterflow-backend
     restart: always
-    # Point to the root .env file automatically
-    environment:
-      - PYTHONUNBUFFERED=1
-      - DATABASE_URL=mysql+mysqlconnector://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
-      - AMI_HOST=${AMI_HOST}
-      - AMI_PORT=${AMI_PORT}
-      - AMI_USER=${AMI_USER}
-      - AMI_PASS=${AMI_PASS}
-      - RECORDINGS_PATH=/var/spool/asterisk/monitor
+    env_file: .env
+    # Removed public ports exposure (access only via nginx)
     volumes:
       - /var/spool/asterisk/monitor:/var/spool/asterisk/monitor
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
 
   frontend:
-    build: ./frontend_v3
+    build:
+      context: ./frontend_v3
+      args:
+        - VITE_ASTERISK_IP=${VITE_ASTERISK_IP} # For production builds
     container_name: asterflow-frontend
     restart: always
     depends_on:
       - backend
-    environment:
-      - VITE_ASTERISK_IP=${VITE_ASTERISK_IP}
-    ports:
-      - "80:80"
+    expose:
+      - "80"
