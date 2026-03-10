@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const API_URL = `http://${window.location.hostname}:8000`;
+// Dynamically determine the base URL
+// In development, you might still want http://localhost:8000
+// In production (Nginx), we use relative paths for everything
+const isDev = window.location.port === "3000";
+const API_URL = isDev ? `http://${window.location.hostname}:8000` : "";
 
 const client = axios.create({
     baseURL: API_URL,
