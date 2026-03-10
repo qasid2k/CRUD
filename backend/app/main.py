@@ -54,20 +54,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include main CRUD routes under /api
-app.include_router(crud_routes.router, tags=["CRUD"], prefix="/api")
-
-# Include CDR report routes under /api
-app.include_router(cdr_routes.router, tags=["CDR Reports"], prefix="/api")
-
-# Include Recordings routes under /api
-app.include_router(recordings_routes.router, tags=["Recordings"], prefix="/api")
-
-
-@app.get("/")
+# Root router for basic info
+root_router = FastAPI().router
+@root_router.get("/")
 async def read_root():
     """Root endpoint - returns API info and available tables."""
     return {
         "message": "Asterisk CRUD API is running",
         "tables": crud_service.get_available_tables(),
     }
+
+# Include all routers under /api
+app.include_router(root_router, prefix="/api")
+app.include_router(crud_routes.router, tags=["CRUD"], prefix="/api")
+app.include_router(cdr_routes.router, tags=["CDR Reports"], prefix="/api")
+app.include_router(recordings_routes.router, tags=["Recordings"], prefix="/api")
