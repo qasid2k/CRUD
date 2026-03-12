@@ -85,4 +85,35 @@ export const api = {
     getRecordingUrl: (filename: string) => {
         return `${client.defaults.baseURL}/recordings/stream/${encodeURIComponent(filename)}`;
     },
+
+    // Voicemail endpoints
+    getVoicemailMailboxes: async () => {
+        const { data } = await client.get<any[]>('/voicemails/mailboxes');
+        return data;
+    },
+    getVoicemailFolders: async (mailbox: string, context = 'default') => {
+        const { data } = await client.get<any[]>(`/voicemails/${mailbox}/folders`, { params: { context } });
+        return data;
+    },
+    getVoicemailMessages: async (mailbox: string, folder = 'INBOX', context = 'default') => {
+        const { data } = await client.get<any[]>(`/voicemails/${mailbox}/messages`, { params: { folder, context } });
+        return data;
+    },
+    getVoicemailCount: async (mailbox: string, context = 'default') => {
+        const { data } = await client.get<any>(`/voicemails/${mailbox}/count`, { params: { context } });
+        return data;
+    },
+    getVoicemailStreamUrl: (mailbox: string, folder: string, msgnum: number, context = 'default') => {
+        return `${client.defaults.baseURL}/voicemails/${mailbox}/stream/${folder}/${msgnum}?context=${context}`;
+    },
+    deleteVoicemail: async (mailbox: string, folder: string, msgnum: number, context = 'default') => {
+        const { data } = await client.delete(`/voicemails/${mailbox}/messages/${folder}/${msgnum}`, { params: { context } });
+        return data;
+    },
+    moveVoicemail: async (mailbox: string, fromFolder: string, toFolder: string, msgnum: number, context = 'default') => {
+        const { data } = await client.post(`/voicemails/${mailbox}/move`, null, {
+            params: { from_folder: fromFolder, to_folder: toFolder, msgnum, context },
+        });
+        return data;
+    },
 };

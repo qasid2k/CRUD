@@ -6,10 +6,11 @@ import CdrReport from './components/CdrReport';
 import Toast from './components/Toast.tsx';
 import Softphone from './components/Softphone';
 import RecordingPanel from './components/RecordingPanel';
+import VoicemailPanel from './components/VoicemailPanel';
 import { api } from './api/client';
 import './index.css';
 
-export type Page = 'dashboard' | 'browser' | 'cdr' | 'softphone' | 'recordings';
+export type Page = 'dashboard' | 'browser' | 'cdr' | 'softphone' | 'recordings' | 'voicemail';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -63,6 +64,8 @@ const App: React.FC = () => {
           <Softphone />
         ) : currentPage === 'recordings' ? (
           <RecordingPanel />
+        ) : currentPage === 'voicemail' ? (
+          <VoicemailPanel />
         ) : (
           <TableBrowser
             tables={tables}

@@ -21,6 +21,7 @@ services:
     # Removed public ports exposure (access only via nginx)
     volumes:
       - /var/spool/asterisk/monitor:/var/spool/asterisk/monitor
+      - /var/spool/asterisk/voicemail:/var/spool/asterisk/voicemail
     expose:
       - "8000"
 

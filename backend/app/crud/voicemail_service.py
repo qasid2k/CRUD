@@ -1,0 +1,443 @@
+"""
+Voicemail Service
+-----------------
+Provides business logic for the voicemail system.
+Reads voicemail messages from the Asterisk database (voicemail_messages table)
+and serves audio from the filesystem (/var/spool/asterisk/voicemail/).
+Supports: list, read/unread, move between folders, delete, stream audio.
+"""
+
+import os
+import glob
+from typing import Any, Dict, List, Optional
+from datetime import datetime
+
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
+from sqlmodel import Session, text
+
+from ..database import engine, get_session
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+# Asterisk stores voicemail audio files here by default
+VOICEMAIL_BASE_DIR = os.getenv(
+    "VOICEMAIL_PATH", "/var/spool/asterisk/voicemail"
+)
+
+# Standard Asterisk voicemail folders
+VALID_FOLDERS = ["INBOX", "Old", "Work", "Family", "Friends", "Cust1", "Cust2", "Cust3", "Cust4", "Cust5", "Urgent", "Tmp"]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _get_vm_audio_path(context: str, mailbox: str, folder: str, msgnum: int) -> Optional[str]:
+    """
+    Build the filesystem path to a voicemail audio file.
+    Asterisk stores them at:
+      /var/spool/asterisk/voicemail/<context>/<mailbox>/<folder>/msg<NNNN>.wav
+    """
+    msg_filename = f"msg{msgnum:04d}.wav"
+    path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder, msg_filename)
+    if os.path.exists(path):
+        return path
+
+    # Try .WAV (Asterisk sometimes uses uppercase)
+    path_upper = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder, f"msg{msgnum:04d}.WAV")
+    if os.path.exists(path_upper):
+        return path_upper
+
+    # Try wav49 format
+    path_wav49 = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder, f"msg{msgnum:04d}.wav49")
+    if os.path.exists(path_wav49):
+        return path_wav49
+
+    return None
+
+
+def _scan_voicemail_files(context: str, mailbox: str, folder: str) -> List[Dict[str, Any]]:
+    """
+    Scan filesystem for voicemail files when DB table doesn't exist.
+    Falls back to reading .txt metadata files alongside .wav files.
+    """
+    folder_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder)
+    if not os.path.exists(folder_path):
+        return []
+
+    messages = []
+    # Find all .txt metadata files
+    txt_files = sorted(glob.glob(os.path.join(folder_path, "msg*.txt")))
+
+    for txt_file in txt_files:
+        basename = os.path.splitext(os.path.basename(txt_file))[0]  # e.g. msg0000
+        msgnum_str = basename.replace("msg", "")
+        try:
+            msgnum = int(msgnum_str)
+        except ValueError:
+            continue
+
+        # Parse the metadata file
+        metadata: Dict[str, str] = {}
+        try:
+            with open(txt_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if "=" in line:
+                        key, _, value = line.partition("=")
+                        metadata[key.strip()] = value.strip()
+        except Exception:
+            pass
+
+        # Find the corresponding audio file
+        wav_path = None
+        for ext in [".wav", ".WAV", ".wav49"]:
+            candidate = os.path.join(folder_path, basename + ext)
+            if os.path.exists(candidate):
+                wav_path = candidate
+                break
+
+        duration = int(metadata.get("duration", "0"))
+        origtime = metadata.get("origtime", "0")
+        callerid = metadata.get("callerid", "Unknown")
+        msg_id = metadata.get("msg_id", "")
+
+        # Convert origtime (Unix timestamp) to ISO format
+        try:
+            origtime_dt = datetime.fromtimestamp(int(origtime)).isoformat()
+        except (ValueError, OSError):
+            origtime_dt = datetime.now().isoformat()
+
+        messages.append({
+            "id": msgnum,
+            "msgnum": msgnum,
+            "dir": folder_path,
+            "context": context,
+            "mailbox": mailbox,
+            "folder": folder,
+            "callerid": callerid,
+            "origtime": origtime_dt,
+            "duration": duration,
+            "msg_id": msg_id,
+            "has_audio": wav_path is not None,
+        })
+
+    return messages
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def get_mailboxes() -> List[Dict[str, Any]]:
+    """
+    Return all configured voicemail mailboxes from the 'voicemail' table.
+    Each row represents one agent/extension's mailbox settings.
+    """
+    try:
+        with Session(engine) as session:
+            result = session.execute(text(
+                "SELECT context, mailbox, fullname, email "
+                "FROM voicemail ORDER BY mailbox"
+            ))
+            return [dict(row._mapping) for row in result]
+    except Exception as e:
+        print(f"[Voicemail] Error fetching mailboxes: {e}")
+        return []
+
+
+def get_folders_for_mailbox(mailbox: str, context: str = "default") -> List[Dict[str, Any]]:
+    """
+    Return the list of voicemail folders and the count of messages in each.
+    Uses filesystem scanning since that's the ground truth.
+    """
+    folders = []
+    mailbox_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox)
+
+    for folder_name in VALID_FOLDERS:
+        folder_path = os.path.join(mailbox_path, folder_name)
+        count = 0
+        if os.path.exists(folder_path):
+            # Count .wav files (each message has a .wav file)
+            count = len(glob.glob(os.path.join(folder_path, "msg*.txt")))
+
+        folders.append({
+            "name": folder_name,
+            "count": count,
+        })
+
+    return folders
+
+
+def get_messages(
+    mailbox: str,
+    context: str = "default",
+    folder: str = "INBOX",
+) -> List[Dict[str, Any]]:
+    """
+    Get all voicemail messages for a specific mailbox and folder.
+    First tries the database (voicemail_messages table), then falls back
+    to filesystem scanning.
+    """
+    # Validate folder
+    if folder not in VALID_FOLDERS:
+        folder = "INBOX"
+
+    # Strategy 1: Try the database table
+    try:
+        with Session(engine) as session:
+            result = session.execute(
+                text(
+                    "SELECT id, dir, msgnum, context, callerid, origtime, "
+                    "duration, mailboxuser, mailboxcontext, msg_id "
+                    "FROM voicemail_messages "
+                    "WHERE mailboxuser = :mailbox "
+                    "AND mailboxcontext = :context "
+                    "AND dir LIKE :folder_pattern "
+                    "ORDER BY origtime DESC"
+                ),
+                {
+                    "mailbox": mailbox,
+                    "context": context,
+                    "folder_pattern": f"%/{folder}",
+                },
+            )
+            rows = [dict(row._mapping) for row in result]
+
+            if rows:
+                # Enrich with audio availability
+                for row in rows:
+                    row["folder"] = folder
+                    row["mailbox"] = mailbox
+                    row["has_audio"] = _get_vm_audio_path(
+                        context, mailbox, folder, row.get("msgnum", 0)
+                    ) is not None
+
+                    # Convert origtime to ISO if it's a unix timestamp string
+                    origtime = row.get("origtime", "")
+                    if origtime and str(origtime).isdigit():
+                        try:
+                            row["origtime"] = datetime.fromtimestamp(
+                                int(origtime)
+                            ).isoformat()
+                        except (ValueError, OSError):
+                            pass
+
+                return rows
+    except Exception as e:
+        print(f"[Voicemail] DB query failed (falling back to filesystem): {e}")
+
+    # Strategy 2: Filesystem scan
+    return _scan_voicemail_files(context, mailbox, folder)
+
+
+def stream_message(
+    mailbox: str,
+    folder: str,
+    msgnum: int,
+    context: str = "default",
+) -> FileResponse:
+    """Stream a voicemail audio file."""
+    if folder not in VALID_FOLDERS:
+        raise HTTPException(status_code=400, detail=f"Invalid folder: {folder}")
+
+    audio_path = _get_vm_audio_path(context, mailbox, folder, msgnum)
+    if not audio_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Audio file not found for mailbox={mailbox}, folder={folder}, msg={msgnum}",
+        )
+
+    # Determine media type
+    media_type = "audio/wav"
+    if audio_path.endswith(".wav49"):
+        media_type = "audio/x-wav"
+
+    return FileResponse(
+        audio_path,
+        media_type=media_type,
+        filename=f"voicemail_{mailbox}_{folder}_{msgnum}.wav",
+    )
+
+
+def delete_message(
+    mailbox: str,
+    folder: str,
+    msgnum: int,
+    context: str = "default",
+) -> bool:
+    """
+    Delete a voicemail message.
+    Removes from database (if present) and filesystem.
+    """
+    # 1. Delete from DB
+    try:
+        with Session(engine) as session:
+            session.execute(
+                text(
+                    "DELETE FROM voicemail_messages "
+                    "WHERE mailboxuser = :mailbox "
+                    "AND mailboxcontext = :context "
+                    "AND msgnum = :msgnum "
+                    "AND dir LIKE :folder_pattern"
+                ),
+                {
+                    "mailbox": mailbox,
+                    "context": context,
+                    "msgnum": msgnum,
+                    "folder_pattern": f"%/{folder}",
+                },
+            )
+            session.commit()
+    except Exception as e:
+        print(f"[Voicemail] DB delete warning: {e}")
+
+    # 2. Delete from filesystem
+    folder_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder)
+    basename = f"msg{msgnum:04d}"
+    deleted_any = False
+
+    for ext in [".wav", ".WAV", ".wav49", ".txt", ".gsm"]:
+        fpath = os.path.join(folder_path, basename + ext)
+        if os.path.exists(fpath):
+            try:
+                os.remove(fpath)
+                deleted_any = True
+            except OSError as e:
+                print(f"[Voicemail] Failed to delete {fpath}: {e}")
+
+    # 3. Re-number remaining messages to keep Asterisk happy
+    _renumber_messages(context, mailbox, folder)
+
+    return deleted_any
+
+
+def move_message(
+    mailbox: str,
+    from_folder: str,
+    to_folder: str,
+    msgnum: int,
+    context: str = "default",
+) -> bool:
+    """
+    Move a voicemail message between folders (e.g. INBOX -> Old).
+    This is how 'mark as read' works: move from INBOX to Old.
+    """
+    if from_folder not in VALID_FOLDERS or to_folder not in VALID_FOLDERS:
+        raise HTTPException(status_code=400, detail="Invalid folder name")
+
+    if from_folder == to_folder:
+        return True
+
+    src_folder = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, from_folder)
+    dst_folder = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, to_folder)
+
+    # Ensure destination folder exists
+    os.makedirs(dst_folder, exist_ok=True)
+
+    # Find the next available msgnum in destination
+    existing = sorted(glob.glob(os.path.join(dst_folder, "msg*.txt")))
+    next_num = len(existing)
+
+    basename_src = f"msg{msgnum:04d}"
+    basename_dst = f"msg{next_num:04d}"
+
+    moved_any = False
+    for ext in [".wav", ".WAV", ".wav49", ".txt", ".gsm"]:
+        src_path = os.path.join(src_folder, basename_src + ext)
+        dst_path = os.path.join(dst_folder, basename_dst + ext)
+        if os.path.exists(src_path):
+            try:
+                os.rename(src_path, dst_path)
+                moved_any = True
+            except OSError as e:
+                print(f"[Voicemail] Failed to move {src_path} -> {dst_path}: {e}")
+
+    # Update database if table exists
+    try:
+        with Session(engine) as session:
+            new_dir = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, to_folder)
+            session.execute(
+                text(
+                    "UPDATE voicemail_messages "
+                    "SET dir = :new_dir, msgnum = :new_msgnum "
+                    "WHERE mailboxuser = :mailbox "
+                    "AND mailboxcontext = :context "
+                    "AND msgnum = :old_msgnum "
+                    "AND dir LIKE :folder_pattern"
+                ),
+                {
+                    "new_dir": new_dir,
+                    "new_msgnum": next_num,
+                    "mailbox": mailbox,
+                    "context": context,
+                    "old_msgnum": msgnum,
+                    "folder_pattern": f"%/{from_folder}",
+                },
+            )
+            session.commit()
+    except Exception as e:
+        print(f"[Voicemail] DB update warning during move: {e}")
+
+    # Re-number source folder
+    _renumber_messages(context, mailbox, from_folder)
+
+    return moved_any
+
+
+def get_message_count(mailbox: str, context: str = "default") -> Dict[str, int]:
+    """
+    Get total and new (INBOX) message counts for a mailbox.
+    """
+    inbox_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, "INBOX")
+    old_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, "Old")
+
+    new_count = 0
+    old_count = 0
+
+    if os.path.exists(inbox_path):
+        new_count = len(glob.glob(os.path.join(inbox_path, "msg*.txt")))
+    if os.path.exists(old_path):
+        old_count = len(glob.glob(os.path.join(old_path, "msg*.txt")))
+
+    return {
+        "mailbox": mailbox,
+        "new": new_count,
+        "old": old_count,
+        "total": new_count + old_count,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Internal Helpers
+# ---------------------------------------------------------------------------
+
+def _renumber_messages(context: str, mailbox: str, folder: str):
+    """
+    Asterisk expects voicemail files to be sequentially numbered (msg0000, msg0001, ...).
+    After a delete or move, we re-number the remaining files.
+    """
+    folder_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder)
+    if not os.path.exists(folder_path):
+        return
+
+    # Get all existing message numbers
+    txt_files = sorted(glob.glob(os.path.join(folder_path, "msg*.txt")))
+    
+    for new_idx, txt_file in enumerate(txt_files):
+        old_basename = os.path.splitext(os.path.basename(txt_file))[0]
+        new_basename = f"msg{new_idx:04d}"
+
+        if old_basename == new_basename:
+            continue  # Already correct
+
+        for ext in [".wav", ".WAV", ".wav49", ".txt", ".gsm"]:
+            old_path = os.path.join(folder_path, old_basename + ext)
+            new_path = os.path.join(folder_path, new_basename + ext)
+            if os.path.exists(old_path):
+                try:
+                    os.rename(old_path, new_path)
+                except OSError:
+                    pass

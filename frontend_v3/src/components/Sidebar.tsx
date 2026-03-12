@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Database, Server, BarChart3, Phone } from 'lucide-react';
+import { LayoutDashboard, Database, Server, BarChart3, Phone, Voicemail } from 'lucide-react';
 import type { Page } from '../App';
 
 interface SidebarProps {
@@ -51,6 +51,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, setCurrentPage, isOpen, 
                     >
                         <Phone size={18} style={{ color: '#10b981' }} />
                         <span>Call Recordings</span>
+                    </div>
+                    <div
+                        className={`nav-item ${currentPage === 'voicemail' ? 'active' : ''}`}
+                        onClick={() => setCurrentPage('voicemail')}
+                    >
+                        <Voicemail size={18} style={{ color: '#f59e0b' }} />
+                        <span>Voicemail</span>
                     </div>
                     <div
                         className={`nav-item ${currentPage === 'softphone' ? 'active' : ''}`}

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .crud import routes as crud_routes
 from .crud import cdr_routes
 from .crud import recordings_routes
+from .crud import voicemail_routes
 from .crud import service as crud_service
 from .crud import cdr_service
 
@@ -69,3 +70,4 @@ app.include_router(root_router, prefix="/api")
 app.include_router(crud_routes.router, tags=["CRUD"], prefix="/api")
 app.include_router(cdr_routes.router, tags=["CDR Reports"], prefix="/api")
 app.include_router(recordings_routes.router, tags=["Recordings"], prefix="/api")
+app.include_router(voicemail_routes.router, tags=["Voicemails"], prefix="/api")
