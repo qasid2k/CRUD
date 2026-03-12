@@ -116,4 +116,16 @@ export const api = {
         });
         return data;
     },
+    createVoicemailFolder: async (mailbox: string, folderName: string, context = 'default') => {
+        const { data } = await client.post(`/voicemails/${mailbox}/folders`, null, {
+            params: { folder_name: folderName, context },
+        });
+        return data;
+    },
+    deleteVoicemailFolder: async (mailbox: string, folderName: string, context = 'default') => {
+        const { data } = await client.delete(`/voicemails/${mailbox}/folders/${encodeURIComponent(folderName)}`, {
+            params: { context },
+        });
+        return data;
+    },
 };

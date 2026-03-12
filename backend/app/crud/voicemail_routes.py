@@ -94,3 +94,25 @@ async def move_message(
         "to": to_folder,
         "msgnum": msgnum,
     }
+
+
+@router.post("/{mailbox}/folders")
+async def create_folder(
+    mailbox: str,
+    folder_name: str = Query(..., description="Name for the new folder"),
+    context: str = Query("default"),
+):
+    """Create a new custom voicemail folder."""
+    return voicemail_service.create_folder(mailbox, folder_name, context)
+
+
+@router.delete("/{mailbox}/folders/{folder_name}")
+async def delete_folder(
+    mailbox: str,
+    folder_name: str,
+    context: str = Query("default"),
+):
+    """Delete a custom voicemail folder (must be empty, cannot delete protected folders)."""
+    voicemail_service.delete_folder(mailbox, folder_name, context)
+    return {"status": "deleted", "folder": folder_name}
+

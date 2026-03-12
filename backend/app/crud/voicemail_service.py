@@ -26,8 +26,45 @@ VOICEMAIL_BASE_DIR = os.getenv(
     "VOICEMAIL_PATH", "/var/spool/asterisk/voicemail"
 )
 
-# Standard Asterisk voicemail folders
-VALID_FOLDERS = ["INBOX", "Old", "Work", "Family", "Friends", "Cust1", "Cust2", "Cust3", "Cust4", "Cust5", "Urgent", "Tmp"]
+# Default Asterisk voicemail folders (always shown even if empty)
+DEFAULT_FOLDERS = ["INBOX", "Old", "Urgent"]
+
+# Reserved folder names that cannot be deleted
+PROTECTED_FOLDERS = {"INBOX", "Old", "Tmp"}
+
+# Characters not allowed in folder names (filesystem safety)
+_UNSAFE_CHARS = set('/\\..\0')
+
+
+def _is_valid_folder_name(name: str) -> bool:
+    """Check if a folder name is safe for use on the filesystem."""
+    if not name or len(name) > 40:
+        return False
+    if name.startswith('.') or name.startswith(' '):
+        return False
+    if any(c in _UNSAFE_CHARS for c in name):
+        return False
+    return True
+
+
+def _discover_folders(context: str, mailbox: str) -> List[str]:
+    """
+    Dynamically discover all folders for a mailbox by scanning the filesystem.
+    Returns a combined list of default folders + any custom folders found on disk.
+    """
+    mailbox_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox)
+    found_folders = set(DEFAULT_FOLDERS)  # Always include defaults
+
+    if os.path.exists(mailbox_path):
+        for entry in os.listdir(mailbox_path):
+            entry_path = os.path.join(mailbox_path, entry)
+            if os.path.isdir(entry_path) and not entry.startswith('.'):
+                found_folders.add(entry)
+
+    # Sort: defaults first (in order), then custom folders alphabetically
+    default_order = [f for f in DEFAULT_FOLDERS if f in found_folders]
+    custom_order = sorted(f for f in found_folders if f not in DEFAULT_FOLDERS)
+    return default_order + custom_order
 
 
 # ---------------------------------------------------------------------------
@@ -151,21 +188,23 @@ def get_mailboxes() -> List[Dict[str, Any]]:
 def get_folders_for_mailbox(mailbox: str, context: str = "default") -> List[Dict[str, Any]]:
     """
     Return the list of voicemail folders and the count of messages in each.
-    Uses filesystem scanning since that's the ground truth.
+    Dynamically discovers folders from the filesystem.
     """
     folders = []
     mailbox_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox)
+    discovered = _discover_folders(context, mailbox)
 
-    for folder_name in VALID_FOLDERS:
+    for folder_name in discovered:
         folder_path = os.path.join(mailbox_path, folder_name)
         count = 0
         if os.path.exists(folder_path):
-            # Count .wav files (each message has a .wav file)
             count = len(glob.glob(os.path.join(folder_path, "msg*.txt")))
 
         folders.append({
             "name": folder_name,
             "count": count,
+            "is_custom": folder_name not in DEFAULT_FOLDERS,
+            "is_protected": folder_name in PROTECTED_FOLDERS,
         })
 
     return folders
@@ -181,8 +220,8 @@ def get_messages(
     First tries the database (voicemail_messages table), then falls back
     to filesystem scanning.
     """
-    # Validate folder
-    if folder not in VALID_FOLDERS:
+    # Validate folder name for safety
+    if not _is_valid_folder_name(folder):
         folder = "INBOX"
 
     # Strategy 1: Try the database table
@@ -240,8 +279,8 @@ def stream_message(
     context: str = "default",
 ) -> FileResponse:
     """Stream a voicemail audio file."""
-    if folder not in VALID_FOLDERS:
-        raise HTTPException(status_code=400, detail=f"Invalid folder: {folder}")
+    if not _is_valid_folder_name(folder):
+        raise HTTPException(status_code=400, detail=f"Invalid folder name: {folder}")
 
     audio_path = _get_vm_audio_path(context, mailbox, folder, msgnum)
     if not audio_path:
@@ -325,7 +364,7 @@ def move_message(
     Move a voicemail message between folders (e.g. INBOX -> Old).
     This is how 'mark as read' works: move from INBOX to Old.
     """
-    if from_folder not in VALID_FOLDERS or to_folder not in VALID_FOLDERS:
+    if not _is_valid_folder_name(from_folder) or not _is_valid_folder_name(to_folder):
         raise HTTPException(status_code=400, detail="Invalid folder name")
 
     if from_folder == to_folder:
@@ -408,6 +447,84 @@ def get_message_count(mailbox: str, context: str = "default") -> Dict[str, int]:
         "old": old_count,
         "total": new_count + old_count,
     }
+
+
+def create_folder(
+    mailbox: str,
+    folder_name: str,
+    context: str = "default",
+) -> Dict[str, Any]:
+    """
+    Create a new custom voicemail folder for a mailbox.
+    Creates the directory on the filesystem.
+    """
+    if not _is_valid_folder_name(folder_name):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid folder name: '{folder_name}'. Use only letters, numbers, spaces, hyphens, and underscores.",
+        )
+
+    mailbox_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox)
+    folder_path = os.path.join(mailbox_path, folder_name)
+
+    if os.path.exists(folder_path):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Folder '{folder_name}' already exists.",
+        )
+
+    try:
+        os.makedirs(folder_path, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create folder: {e}",
+        )
+
+    return {
+        "name": folder_name,
+        "count": 0,
+        "is_custom": folder_name not in DEFAULT_FOLDERS,
+        "is_protected": False,
+    }
+
+
+def delete_folder(
+    mailbox: str,
+    folder_name: str,
+    context: str = "default",
+) -> bool:
+    """
+    Delete a custom voicemail folder.
+    Protected folders (INBOX, Old, Tmp) cannot be deleted.
+    Only empty folders can be deleted.
+    """
+    if folder_name in PROTECTED_FOLDERS:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot delete protected folder '{folder_name}'.",
+        )
+
+    folder_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder_name)
+
+    if not os.path.exists(folder_path):
+        raise HTTPException(status_code=404, detail=f"Folder '{folder_name}' not found.")
+
+    # Check if folder has messages
+    msg_count = len(glob.glob(os.path.join(folder_path, "msg*.txt")))
+    if msg_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Folder '{folder_name}' has {msg_count} message(s). Move or delete them first.",
+        )
+
+    try:
+        import shutil
+        shutil.rmtree(folder_path)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete folder: {e}")
+
+    return True
 
 
 # ---------------------------------------------------------------------------
