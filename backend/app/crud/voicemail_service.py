@@ -510,14 +510,6 @@ def delete_folder(
     if not os.path.exists(folder_path):
         raise HTTPException(status_code=404, detail=f"Folder '{folder_name}' not found.")
 
-    # Check if folder has messages
-    msg_count = len(glob.glob(os.path.join(folder_path, "msg*.txt")))
-    if msg_count > 0:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Folder '{folder_name}' has {msg_count} message(s). Move or delete them first.",
-        )
-
     try:
         import shutil
         shutil.rmtree(folder_path)

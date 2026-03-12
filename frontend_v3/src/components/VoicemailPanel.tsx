@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
     RefreshCw, Search, Play, Pause, Trash2, Mail, MailOpen,
     Inbox, Archive, Clock, AlertCircle, ArrowRight, Voicemail,
-    FolderPlus, X
+    FolderPlus, X, Settings2
 } from 'lucide-react';
 import { api } from '../api/client';
 import ThemeToggle from './ThemeToggle';
@@ -53,6 +53,7 @@ const VoicemailPanel: React.FC = () => {
     const [actionLoading, setActionLoading] = useState<number | null>(null);
     const [counts, setCounts] = useState<{ new: number; old: number; total: number } | null>(null);
     const [showNewFolder, setShowNewFolder] = useState(false);
+    const [manageFolders, setManageFolders] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
     const [folderActionLoading, setFolderActionLoading] = useState(false);
 
@@ -187,7 +188,7 @@ const VoicemailPanel: React.FC = () => {
     };
 
     const handleDeleteFolder = async (folderName: string) => {
-        if (!confirm(`Delete folder "${folderName}"? It must be empty.`)) return;
+        if (!confirm(`WARNING: This will permanently delete the folder "${folderName}" and ALL voicemails inside it. Continue?`)) return;
         setFolderActionLoading(true);
         try {
             await api.deleteVoicemailFolder(selectedMailbox, folderName);
@@ -314,13 +315,22 @@ const VoicemailPanel: React.FC = () => {
                     <div className="vm-folder-list">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 8px 0 0' }}>
                             <label className="vm-sidebar-label">Folders</label>
-                            <button
-                                className="vm-add-folder-btn"
-                                onClick={() => setShowNewFolder(!showNewFolder)}
-                                title="Create new folder"
-                            >
-                                {showNewFolder ? <X size={14} /> : <FolderPlus size={14} />}
-                            </button>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                    className={`vm-sidebar-action-btn ${manageFolders ? 'active' : ''}`}
+                                    onClick={() => setManageFolders(!manageFolders)}
+                                    title="Manage folders"
+                                >
+                                    <Settings2 size={14} />
+                                </button>
+                                <button
+                                    className={`vm-sidebar-action-btn ${showNewFolder ? 'active' : ''}`}
+                                    onClick={() => setShowNewFolder(!showNewFolder)}
+                                    title="Create new folder"
+                                >
+                                    {showNewFolder ? <X size={14} /> : <FolderPlus size={14} />}
+                                </button>
+                            </div>
                         </div>
 
                         {/* New Folder Input */}
@@ -365,16 +375,16 @@ const VoicemailPanel: React.FC = () => {
                                             {f.count}
                                         </span>
                                     )}
-                                    {f.is_custom && !f.is_protected && (
+                                    {manageFolders && f.is_custom && !f.is_protected && (
                                         <button
-                                            className="vm-folder-delete-btn"
+                                            className="vm-folder-delete-btn visible"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 handleDeleteFolder(f.name);
                                             }}
                                             title={`Delete folder "${f.name}"`}
                                         >
-                                            <X size={12} />
+                                            <Trash2 size={12} />
                                         </button>
                                     )}
                                 </div>
@@ -500,16 +510,18 @@ const VoicemailPanel: React.FC = () => {
                                                         <ArrowRight size={16} />
                                                     </button>
                                                     <div className="vm-move-menu">
-                                                        {folders.filter(f => f.name !== selectedFolder).map(f => (
-                                                            <div
-                                                                key={f.name}
-                                                                className="vm-move-option"
-                                                                onClick={() => handleMove(msg, f.name)}
-                                                            >
-                                                                {getFolderIcon(f.name)}
-                                                                <span>{f.name}</span>
-                                                            </div>
-                                                        ))}
+                                                        <div className="vm-move-menu-items">
+                                                            {folders.filter(f => f.name !== selectedFolder).map(f => (
+                                                                <div
+                                                                    key={f.name}
+                                                                    className="vm-move-option"
+                                                                    onClick={() => handleMove(msg, f.name)}
+                                                                >
+                                                                    {getFolderIcon(f.name)}
+                                                                    <span>{f.name}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                 </div>
 
@@ -613,7 +625,7 @@ const VoicemailPanel: React.FC = () => {
                     gap: 2px;
                 }
 
-                .vm-add-folder-btn {
+                .vm-sidebar-action-btn {
                     background: transparent;
                     border: 1px solid var(--border);
                     color: var(--text-muted);
@@ -627,7 +639,8 @@ const VoicemailPanel: React.FC = () => {
                     transition: all 0.2s;
                 }
 
-                .vm-add-folder-btn:hover {
+                .vm-sidebar-action-btn:hover,
+                .vm-sidebar-action-btn.active {
                     background: rgba(79, 70, 229, 0.1);
                     border-color: var(--primary);
                     color: var(--primary);
@@ -693,6 +706,10 @@ const VoicemailPanel: React.FC = () => {
                     cursor: pointer;
                     opacity: 0;
                     transition: all 0.15s;
+                }
+
+                .vm-folder-delete-btn.visible {
+                    opacity: 0.8 !important;
                 }
 
                 .vm-folder-item:hover .vm-folder-delete-btn {
@@ -918,20 +935,23 @@ const VoicemailPanel: React.FC = () => {
                     position: absolute;
                     right: 0;
                     top: 100%;
-                    margin-top: 4px;
-                    background: var(--bg-dark);
-                    border: 1px solid var(--border);
-                    border-radius: 10px;
-                    padding: 6px;
-                    min-width: 160px;
+                    padding-top: 8px; /* Bridge gap for hover stability */
                     z-index: 100;
-                    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
                 }
 
                 .vm-move-dropdown:hover .vm-move-menu {
                     display: flex;
                     flex-direction: column;
-                    gap: 2px;
+                }
+
+                /* Container for options inside the menu */
+                .vm-move-menu-items {
+                    background: var(--bg-dark);
+                    border: 1px solid var(--border);
+                    border-radius: 10px;
+                    padding: 6px;
+                    min-width: 160px;
+                    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
                 }
 
                 .vm-move-option {
