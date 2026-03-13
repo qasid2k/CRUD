@@ -17,7 +17,6 @@ def check_table():
             print(f"Primary Keys: {[c.name for c in messages.primary_key.columns]}")
             
             print("\nFetching first record...")
-            from sqlalchemy.orm import Session
             with Session(engine) as session:
                 from sqlalchemy import select
                 row = session.execute(select(messages).limit(1)).first()
