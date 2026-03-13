@@ -141,7 +141,17 @@ def list_items(
 
     stmt = select(table).offset(skip).limit(limit)
     result = session.execute(stmt)
-    return [dict(row._mapping) for row in result]
+    
+    items = []
+    for row in result:
+        item_dict = dict(row._mapping)
+        # Convert binary data to string to avoid JSON serialization errors
+        for key, value in item_dict.items():
+            if isinstance(value, bytes):
+                item_dict[key] = "<binary data>"
+        items.append(item_dict)
+    
+    return items
 
 
 def create_item(
@@ -203,7 +213,14 @@ def get_item_by_id(
         return None
 
     result = session.execute(select(table).where(condition)).first()
-    return dict(result._mapping) if result else None
+    if not result:
+        return None
+        
+    item_dict = dict(result._mapping)
+    for key, value in item_dict.items():
+        if isinstance(value, bytes):
+            item_dict[key] = "<binary data>"
+    return item_dict
 
 
 def update_item(
