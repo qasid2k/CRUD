@@ -21,8 +21,10 @@ export const api = {
         });
         return data;
     },
-    getTableSchema: async (table: string) => {
-        const { data } = await client.get<{ fields: string[]; primary_keys: string[] }>(`/${table}/schema`);
+    getTableSchema: async (table: string, refresh = false) => {
+        const { data } = await client.get<{ fields: string[]; primary_keys: string[] }>(`/${table}/schema`, {
+            params: { refresh }
+        });
         return data;
     },
     createRecord: async (table: string, record: any) => {

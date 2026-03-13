@@ -37,8 +37,8 @@ async def read_items(
 
 
 @router.get("/{table_name}/schema")
-async def get_table_schema(table_name: str):
-    return service.get_schema(table_name)
+async def get_table_schema(table_name: str, refresh: bool = False):
+    return service.get_schema(table_name, force_refresh=refresh)
 
 
 @router.post("/{table_name}")

@@ -52,19 +52,34 @@ def list_tables() -> List[str]:
     return sorted(inspector.get_table_names())
 
 
-def get_table(table_name: str) -> Optional[Table]:
+def get_table(table_name: str, force_refresh: bool = False) -> Optional[Table]:
     """
     Return the SQLAlchemy Table object for a given name.
     Performs case-insensitive lookup and dynamic reflection if needed.
     """
+    # 0. Forced refresh
+    if force_refresh:
+        # We need to remove it from metadata to re-reflect
+        actual_name = None
+        if table_name in _metadata.tables:
+            actual_name = table_name
+        else:
+            for t_name in _metadata.tables:
+                if t_name.lower() == table_name.lower():
+                    actual_name = t_name
+                    break
+        if actual_name:
+            _metadata.remove(_metadata.tables[actual_name])
+
     # 1. Direct hit in cache
-    if table_name in _metadata.tables:
+    if not force_refresh and table_name in _metadata.tables:
         return _metadata.tables[table_name]
 
     # 2. Case-insensitive search in existing metadata
-    for t_name in _metadata.tables:
-        if t_name.lower() == table_name.lower():
-            return _metadata.tables[t_name]
+    if not force_refresh:
+        for t_name in _metadata.tables:
+            if t_name.lower() == table_name.lower():
+                return _metadata.tables[t_name]
 
     # 3. Try to reflect it from the database on-demand
     try:

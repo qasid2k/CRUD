@@ -25,18 +25,21 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
         return ['queue_log', 'cdr'].includes(currentTable.toLowerCase());
     }, [currentTable]);
 
-    const loadTableData = async (tableName: string) => {
+    const loadTableData = async (tableName: string, refreshSchema = false) => {
         if (!tableName) return;
         setLoading(true);
         setSortConfig(null); // Reset sort when changing tables
         try {
             const [records, tableSchema] = await Promise.all([
                 api.getTableData(tableName),
-                api.getTableSchema(tableName)
+                api.getTableSchema(tableName, refreshSchema)
             ]);
             setData(records);
             setSchema(tableSchema);
             setCurrentTable(tableName);
+            if (refreshSchema) {
+                showToast(`Schema for ${tableName} refreshed`);
+            }
         } catch (err) {
             showToast('Failed to load table data', 'error');
         } finally {
@@ -158,7 +161,7 @@ const TableBrowser: React.FC<TableBrowserProps> = ({ tables, showToast }) => {
                         </>
                     )}
                     <ThemeToggle />
-                    <button className="btn btn-icon" onClick={() => loadTableData(currentTable)}>
+                    <button className="btn btn-icon" onClick={() => loadTableData(currentTable, true)}>
                         <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
                     </button>
                 </div>

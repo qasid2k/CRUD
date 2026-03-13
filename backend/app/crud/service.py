@@ -34,7 +34,10 @@ def get_available_tables() -> List[str]:
     return repository.list_tables()
 
 
-def get_schema(table_name: str) -> Dict[str, Any]:
+def get_schema(table_name: str, force_refresh: bool = False) -> Dict[str, Any]:
+    if force_refresh:
+        repository.get_table(table_name, force_refresh=True)
+
     schema = repository.get_table_schema(table_name)
     if schema is None:
         raise HTTPException(status_code=404, detail="Table not found")
