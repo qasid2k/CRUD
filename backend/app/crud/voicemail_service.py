@@ -9,6 +9,7 @@ Supports: list, read/unread, move between folders, delete, stream audio.
 
 import os
 import glob
+import shutil
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -30,7 +31,7 @@ VOICEMAIL_BASE_DIR = os.getenv(
 DEFAULT_FOLDERS = ["INBOX", "Old", "Urgent"]
 
 # Reserved folder names that cannot be deleted
-PROTECTED_FOLDERS = {"INBOX", "Old", "Tmp"}
+PROTECTED_FOLDERS = {"INBOX", "Old", "Urgent", "Tmp"}
 
 # Characters not allowed in folder names (filesystem safety)
 _UNSAFE_CHARS = set('/\\..\0')
@@ -230,17 +231,17 @@ def get_messages(
             result = session.execute(
                 text(
                     "SELECT id, dir, msgnum, context, callerid, origtime, "
-                    "duration, mailboxuser, mailboxcontext, msg_id "
+                    "duration, mailboxuser, mailboxcontext, msg_id, flag "
                     "FROM voicemail_messages "
                     "WHERE mailboxuser = :mailbox "
                     "AND mailboxcontext = :context "
-                    "AND dir LIKE :folder_pattern "
+                    "AND dir = :folder_dir "
                     "ORDER BY origtime DESC"
                 ),
                 {
                     "mailbox": mailbox,
                     "context": context,
-                    "folder_pattern": f"%/{folder}",
+                    "folder_dir": os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder),
                 },
             )
             rows = [dict(row._mapping) for row in result]
@@ -320,13 +321,13 @@ def delete_message(
                     "WHERE mailboxuser = :mailbox "
                     "AND mailboxcontext = :context "
                     "AND msgnum = :msgnum "
-                    "AND dir LIKE :folder_pattern"
+                    "AND dir = :folder_dir"
                 ),
                 {
                     "mailbox": mailbox,
                     "context": context,
                     "msgnum": msgnum,
-                    "folder_pattern": f"%/{folder}",
+                    "folder_dir": os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder),
                 },
             )
             session.commit()
@@ -405,7 +406,7 @@ def move_message(
                     "WHERE mailboxuser = :mailbox "
                     "AND mailboxcontext = :context "
                     "AND msgnum = :old_msgnum "
-                    "AND dir LIKE :folder_pattern"
+                    "AND dir = :old_dir"
                 ),
                 {
                     "new_dir": new_dir,
@@ -413,7 +414,7 @@ def move_message(
                     "mailbox": mailbox,
                     "context": context,
                     "old_msgnum": msgnum,
-                    "folder_pattern": f"%/{from_folder}",
+                    "old_dir": os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, from_folder),
                 },
             )
             session.commit()
@@ -499,7 +500,8 @@ def delete_folder(
     Protected folders (INBOX, Old, Tmp) cannot be deleted.
     Only empty folders can be deleted.
     """
-    if folder_name in PROTECTED_FOLDERS:
+    folder_name_upper = folder_name.upper()
+    if folder_name_upper in {f.upper() for f in PROTECTED_FOLDERS}:
         raise HTTPException(
             status_code=403,
             detail=f"Cannot delete protected folder '{folder_name}'.",
@@ -507,11 +509,38 @@ def delete_folder(
 
     folder_path = os.path.join(VOICEMAIL_BASE_DIR, context, mailbox, folder_name)
 
+    # 1. Delete from database first
+    try:
+        with Session(engine) as session:
+            session.execute(
+                text(
+                    "DELETE FROM voicemail_messages "
+                    "WHERE mailboxuser = :mailbox "
+                    "AND mailboxcontext = :context "
+                    "AND dir = :folder_path"
+                ),
+                {
+                    "mailbox": mailbox,
+                    "context": context,
+                    "folder_path": folder_path,
+                },
+            )
+            session.commit()
+    except Exception as e:
+        print(f"[Voicemail] DB cleanup warning during folder delete: {e}")
+
+    # 2. Delete from filesystem
     if not os.path.exists(folder_path):
-        raise HTTPException(status_code=404, detail=f"Folder '{folder_name}' not found.")
+        # If it's already gone from disk, we consider it a success since we cleaned the DB
+        return True
+
+    if not os.path.isdir(folder_path):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Path '{folder_name}' exists but is not a folder."
+        )
 
     try:
-        import shutil
         shutil.rmtree(folder_path)
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete folder: {e}")
